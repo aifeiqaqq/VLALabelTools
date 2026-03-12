@@ -23,7 +23,7 @@ const NodeSelector = React.memo(function NodeSelector({
 
   return (
     <div>
-      <label style={S.label}>选择要挂载的节点</label>
+      <label style={S.label}>选择要复用的节点</label>
       <div
         style={{
           maxHeight: 220,
@@ -64,6 +64,11 @@ const NodeSelector = React.memo(function NodeSelector({
               <div style={{ fontSize: 11, color: '#888' }}>
                 {node.state_description}
               </div>
+              {node.actions && node.actions.length > 0 && (
+                <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4, fontWeight: 500 }}>
+                  ⚡ {node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
+                </div>
+              )}
               {node.video_id && (
                 <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
                   来自: {node.video_id}

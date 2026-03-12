@@ -119,12 +119,27 @@ const ProjectsPage = React.memo(function ProjectsPage({ onOpenProject, onCreateN
     
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
+      let data;
+      
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        throw new Error('文件不是有效的 JSON 格式，请确保导入的是通过「导出备份」生成的 .json 文件');
+      }
+      
+      // 验证必要字段（兼容两种格式）
+      if (!data.project) {
+        throw new Error('缺少 project 字段，请确保导入的是正确的项目备份文件');
+      }
+      // 兼容备份格式 (project.id) 和详细版格式 (project.project_id)
+      if (!data.project.id && !data.project.project_id) {
+        throw new Error('项目数据缺少 id，文件可能已损坏。请确保导入的是通过本工具导出的 JSON 文件。');
+      }
       
       await importProject(data);
       await loadProjects();
       
-      alert('项目导入成功！');
+      alert(`项目导入成功！\n\n提示：导入的项目不包含视频文件，请打开项目后重新选择视频文件。`);
     } catch (error) {
       console.error('导入项目失败:', error);
       setImportError(error.message);
@@ -230,6 +245,24 @@ const ProjectsPage = React.memo(function ProjectsPage({ onOpenProject, onCreateN
 2. 刷新页面后重新导入视频`);
         }} style={{ padding: '8px 16px', background: 'transparent', color: '#666', border: '1px solid #d5d5d5', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}>
           🔍 存储诊断
+        </button>
+
+        <button onClick={() => {
+          alert(`导入项目帮助:
+
+✅ 正确的做法:
+1. 先使用「导出备份」按钮导出项目
+2. 在需要时使用「导入项目」导入该 JSON 文件
+
+⚠️ 导入后需要:
+- 重新选择视频文件（视频不在 JSON 中）
+- 标注数据会自动保留
+
+❌ 如果提示"无效的项目数据":
+- 检查是否选择了正确的 JSON 文件
+- 确保是通过本工具导出的备份`);
+        }} style={{ padding: '8px 16px', background: 'transparent', color: '#888', border: 'none', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
+          导入帮助
         </button>
 
         {importError && <div style={{ color: '#ef4444', fontSize: 12, display: 'flex', alignItems: 'center' }}>导入失败: {importError}</div>}

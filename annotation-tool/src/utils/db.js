@@ -282,9 +282,13 @@ export const exportProject = async (projectId) => {
 };
 
 export const importProject = async (data) => {
-  if (!data.project?.id) throw new Error('无效的项目数据');
+  // 兼容两种格式：
+  // 1. 备份格式: project.id
+  // 2. 详细版格式: project.project_id
+  const projectId = data.project?.id || data.project?.project_id;
+  if (!projectId) throw new Error('无效的项目数据，缺少项目 ID');
 
-  const newProjectId = `${data.project.id}_imported_${Date.now()}`;
+  const newProjectId = `${projectId}_imported_${Date.now()}`;
   const idMapping = {};  // 旧ID到新ID的映射
 
   // 保存项目
@@ -298,7 +302,11 @@ export const importProject = async (data) => {
   if (data.videos) {
     for (const video of data.videos) {
       const newVideoId = `video_${newProjectId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      idMapping[video.id] = newVideoId;
+      // 兼容两种格式: video.id 或 video.video_id
+      const oldVideoId = video.id || video.video_id;
+      if (oldVideoId) {
+        idMapping[oldVideoId] = newVideoId;
+      }
       
       await saveVideo({
         ...video,
@@ -311,13 +319,22 @@ export const importProject = async (data) => {
   }
 
   // 保存标注数据（更新视频ID引用）
-  if (data.annotations) {
-    const annotations = { ...data.annotations };
+  // 兼容两种格式：
+  // 1. 备份格式: data.annotations { nodes, edges, marks, actionLib }
+  // 2. 详细版格式: data { nodes, marks, action_library }
+  const annotations = data.annotations || {
+    nodes: data.nodes || {},
+    marks: data.marks || {},
+    actionLib: data.action_library || data.actionLib || { drawer: [], coffee_machine: [] },
+  };
+  
+  if (annotations) {
+    const processedAnnotations = { ...annotations };
     
     // 更新 edges 和 marks 中的 video_id
-    if (annotations.edges) {
+    if (processedAnnotations.edges) {
       const newEdges = {};
-      for (const [oldVideoId, edges] of Object.entries(annotations.edges)) {
+      for (const [oldVideoId, edges] of Object.entries(processedAnnotations.edges)) {
         const newVideoId = idMapping[oldVideoId] || oldVideoId;
         newEdges[newVideoId] = edges.map(e => ({
           ...e,
@@ -325,12 +342,12 @@ export const importProject = async (data) => {
           edge_id: crypto.randomUUID(),  // 重新生成ID
         }));
       }
-      annotations.edges = newEdges;
+      processedAnnotations.edges = newEdges;
     }
     
-    if (annotations.marks) {
+    if (processedAnnotations.marks) {
       const newMarks = {};
-      for (const [oldVideoId, marks] of Object.entries(annotations.marks)) {
+      for (const [oldVideoId, marks] of Object.entries(processedAnnotations.marks)) {
         const newVideoId = idMapping[oldVideoId] || oldVideoId;
         newMarks[newVideoId] = marks.map(m => ({
           ...m,
@@ -338,10 +355,10 @@ export const importProject = async (data) => {
           ref_id: crypto.randomUUID(),  // 重新生成ID
         }));
       }
-      annotations.marks = newMarks;
+      processedAnnotations.marks = newMarks;
     }
     
-    await saveAnnotations(newProjectId, annotations);
+    await saveAnnotations(newProjectId, processedAnnotations);
   }
 
   return newProjectId;

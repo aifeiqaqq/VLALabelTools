@@ -423,6 +423,77 @@ const AnnotateTab = React.memo(function AnnotateTab({
             }));
         }}
         onConfirm={handleConfirmEdit}
+        allNodes={allNodes}
+        onSwitchNode={(newNodeId) => {
+          // 复用节点：将当前段落关联到已存在的节点
+          if (!editMark || !currentVideoId) return;
+
+          const { getNodeById, addOrUpdateNode, deleteNodeVideoSegment } = useAnnotationStore.getState();
+
+          // 1. 获取原节点和目标复用节点
+          const oldNode = getNodeById(editMark.node_id);
+          const targetNode = getNodeById(newNodeId);
+
+          if (!oldNode || !targetNode) {
+            alert('找不到节点信息，无法复用');
+            return;
+          }
+
+          // 2. 获取当前视频的段落信息
+          const oldSegment = oldNode.video_segments?.[currentVideoId];
+          if (!oldSegment) {
+            alert('找不到当前视频的段落信息');
+            return;
+          }
+
+          // 3. 确认操作
+          const confirmed = window.confirm(
+            `确定要将此段落复用为节点 "${newNodeId}"？\n\n` +
+            `原节点: ${editMark.node_id}\n` +
+            `新节点: ${newNodeId}\n` +
+            `状态: ${targetNode.state_description}\n` +
+            `动作: ${targetNode.actions?.map(a => `${a.target}·${a.action_name}`).join(', ') || '无'}`
+          );
+
+          if (!confirmed) return;
+
+          // 4. 在目标节点中添加当前视频的段落（复用段落信息）
+          addOrUpdateNode(newNodeId, currentVideoId, {
+            from_frame: oldSegment.from_frame,
+            to_frame: oldSegment.to_frame,
+            from_timestamp: oldSegment.from_timestamp,
+            to_timestamp: oldSegment.to_timestamp,
+            parent_node: oldSegment.parent_node,
+            actions: targetNode.actions || [],  // 使用目标节点的动作
+            state_description: targetNode.state_description,
+            node_meta: targetNode.node_meta,
+            task_type: targetNode.task_type,
+            annotator_id: oldSegment.annotator_id || annotatorId,
+            created_at: oldSegment.created_at || new Date().toISOString()
+          });
+
+          // 5. 从原节点中删除当前视频的段落
+          deleteNodeVideoSegment(editMark.node_id, currentVideoId);
+
+          // 6. 更新所有相关的marks，将node_id改为新的node_id
+          const marksInRange = marks.filter(m =>
+            m.frame_index >= oldSegment.from_frame &&
+            m.frame_index <= oldSegment.to_frame &&
+            m.node_id === editMark.node_id
+          );
+
+          marksInRange.forEach(mark => {
+            const { deleteMark, addMark } = useAnnotationStore.getState();
+            deleteMark(currentVideoId, mark.ref_id);
+            addMark(currentVideoId, {
+              ...mark,
+              node_id: newNodeId
+            });
+          });
+
+          // 7. 关闭模态框
+          closeEditModal();
+        }}
       />
     </div>
   );

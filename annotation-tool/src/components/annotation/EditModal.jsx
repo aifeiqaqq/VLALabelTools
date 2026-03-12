@@ -3,6 +3,8 @@ import { S } from '../../constants/styles';
 import Modal from '../common/Modal';
 import ModalHeader from '../common/ModalHeader';
 import MetaForm from './MetaForm';
+import NodeModeSelector from './NodeModeSelector';
+import NodeSelector from './NodeSelector';
 
 /**
  * 单个动作编辑组件
@@ -183,7 +185,10 @@ const EditModal = React.memo(function EditModal({
   availableTargets,
   getActionSuggestions,
   // 提交
-  onConfirm
+  onConfirm,
+  // 复用节点相关
+  allNodes,
+  onSwitchNode
 }) {
   // 计算是否有有效数据
   const hasValidData = editMark && editMark.node_id;
@@ -202,11 +207,19 @@ const EditModal = React.memo(function EditModal({
 
   // 本地状态控制是否显示动作编辑区域
   const [showActionEdit, setShowActionEdit] = useState(false);
+  
+  // 模式切换：'new' 编辑当前节点 | 'existing' 复用其他节点
+  const [mode, setMode] = useState('new');
+  
+  // 选中的复用节点ID
+  const [selectedReuseNodeId, setSelectedReuseNodeId] = useState(null);
 
-  // 当模态框打开时，初始化动作编辑状态
+  // 当模态框打开时，初始化状态
   useEffect(() => {
     if (isOpen && currentNode) {
       setShowActionEdit(false);
+      setMode('new');
+      setSelectedReuseNodeId(null);
       // 初始化动作列表
       if (currentNode.actions && currentNode.actions.length > 0) {
         const initialActions = currentNode.actions.map(a => ({
@@ -275,248 +288,289 @@ const EditModal = React.memo(function EditModal({
           )}
         </div>
       )}
+      
+      {/* 模式切换：编辑当前节点 | 复用其他节点 */}
+      {allNodes && allNodes.length > 0 && (
+        <NodeModeSelector
+          mode={mode}
+          onModeChange={setMode}
+          existingNodeCount={allNodes.filter(n => n.node_id !== editMark?.node_id).length}
+        />
+      )}
 
       {/* 警告提示 */}
-      <div
-        style={{
-          padding: '10px 14px',
-          background: '#fff3e0',
-          border: '1px solid #f59e0b',
-          borderRadius: 6,
-          marginBottom: 14,
-          fontSize: 12,
-          color: '#bf7326',
-        }}
-        role="alert"
-      >
-        ⚠ 修改将影响所有引用此段落的标记，请确认
-      </div>
-
-      {/* 状态描述 */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={S.label}>状态描述</label>
-        <textarea
-          value={stateDescription}
-          onChange={(e) => onStateDescriptionChange(e.target.value)}
-          placeholder="描述该段落结束时的状态..."
-          rows={2}
-          style={{ ...S.input, resize: 'vertical' }}
-          aria-required="true"
-        />
-      </div>
-
-      {/* 动作编辑区域 */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <label style={S.label}>
-            段落动作
-            <span style={{ color: '#999', fontWeight: 400, marginLeft: 8 }}>
-              ({actions.length} 个)
-            </span>
-          </label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {hasExistingAction && !showActionEdit && (
-              <button
-                onClick={() => setShowActionEdit(true)}
-                style={{
-                  fontSize: 11,
-                  padding: '4px 10px',
-                  background: '#f0f9ff',
-                  border: '1px solid #bae6fd',
-                  borderRadius: 3,
-                  color: '#0284c7',
-                  cursor: 'pointer',
-                }}
-              >
-                修改动作
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 显示现有动作（当不编辑时） */}
-        {hasExistingAction && !showActionEdit && (
-          <div style={{
-            padding: '10px 12px',
-            background: '#fef3c7',
-            border: '1px solid #fbbf24',
-            borderRadius: 4,
+      {mode === 'new' && (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: '#fff3e0',
+            border: '1px solid #f59e0b',
+            borderRadius: 6,
+            marginBottom: 14,
             fontSize: 12,
-            color: '#92400e'
-          }}>
-            ⚡ {currentNode.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
-          </div>
-        )}
-
-        {/* 动作编辑表单 */}
-        {(showActionEdit || !hasExistingAction) && (
-          <div>
-            {actions.length === 0 ? (
-              <div style={{
-                padding: '16px',
-                background: '#f9f9f9',
-                border: '1px dashed #ddd',
-                borderRadius: 6,
-                textAlign: 'center',
-                color: '#999',
-                fontSize: 12,
-                marginBottom: 10
-              }}>
-                暂无动作
-              </div>
-            ) : (
-              actions.map((action, index) => (
-                <ActionEditor
-                  key={index}
-                  index={index}
-                  action={action}
-                  availableTargets={availableTargets}
-                  actionSuggestions={getActionSuggestions(action.target)}
-                  onUpdate={(updated) => updateAction(index, updated)}
-                  onDelete={() => deleteAction(index)}
-                  canDelete={actions.length > 0}
-                />
-              ))
-            )}
-
-            <button
-              onClick={addAction}
-              style={{
-                width: '100%',
-                fontSize: 11,
-                padding: '8px',
-                background: '#f0f9ff',
-                border: '1px solid #bae6fd',
-                borderRadius: 4,
-                color: '#0284c7',
-                cursor: 'pointer',
-                fontWeight: 500,
-                marginBottom: 10
-              }}
-            >
-              + 添加动作
-            </button>
-
-            {/* 取消编辑按钮 */}
-            {showActionEdit && (
-              <button
-                onClick={() => {
-                  setShowActionEdit(false);
-                  // 重置为原始值
-                  if (currentNode?.actions) {
-                    const initialActions = currentNode.actions.map(a => ({
-                      target: a.target,
-                      actionName: a.action_name,
-                      customActionName: '',
-                      customTarget: ''
-                    }));
-                    onActionsChange(initialActions);
-                  } else {
-                    onActionsChange([]);
-                  }
-                }}
-                style={{
-                  fontSize: 11,
-                  padding: '6px',
-                  background: 'transparent',
-                  border: '1px solid #ddd',
-                  borderRadius: 3,
-                  color: '#666',
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
-              >
-                取消修改
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 父节点选择 */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={S.label}>
-          父段落（逻辑来源）
-          {parentNodeId && (
-            <span style={{ color: '#f59e0b', marginLeft: 8, fontSize: 11 }}>
-              {parentNodeId} → {editMark.node_id}
-            </span>
-          )}
-        </label>
-
-        {/* 根节点选项 */}
-        <div style={{ marginBottom: 10 }}>
-          <button
-            onClick={() => onParentNodeChange(null)}
-            style={{
-              ...S.btn(!parentNodeId),
-              width: '100%',
-              padding: '8px',
-              textAlign: 'left',
-            }}
-          >
-            <span style={{ fontWeight: 600 }}>无父段落（起始段落）</span>
-            <span style={{ color: '#666', marginLeft: 8, fontSize: 11 }}>
-              这是任务的起始状态
-            </span>
-          </button>
+            color: '#bf7326',
+          }}
+          role="alert"
+        >
+          ⚠ 修改将影响所有引用此段落的标记，请确认
         </div>
+      )}
 
-        {/* 可选父段落列表 */}
-        {availableParentNodes.length > 0 && (
-          <div
-            style={{
-              maxHeight: 150,
-              overflow: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-            }}
-          >
-            {availableParentNodes.map((node) => {
-              const isSelected = parentNodeId === node.node_id;
-              return (
-                <div
-                  key={node.node_id}
-                  onClick={() => onParentNodeChange(node.node_id)}
-                  style={{
-                    padding: '10px 12px',
+      {/* 复用模式：选择其他节点 */}
+      {mode === 'existing' && allNodes && allNodes.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <NodeSelector
+            nodes={allNodes.filter(n => n.node_id !== editMark?.node_id)}
+            selectedNodeId={selectedReuseNodeId}
+            onSelect={setSelectedReuseNodeId}
+          />
+          {!selectedReuseNodeId && (
+            <div style={{
+              padding: '12px',
+              background: '#fef3c7',
+              border: '1px dashed #f59e0b',
+              borderRadius: 6,
+              fontSize: 12,
+              color: '#92400e',
+              textAlign: 'center',
+              marginTop: 8,
+            }}>
+              请上方选择一个节点进行复用
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 编辑模式内容 */}
+      {mode === 'new' && (
+        <>
+          {/* 状态描述 */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>状态描述</label>
+            <textarea
+              value={stateDescription}
+              onChange={(e) => onStateDescriptionChange(e.target.value)}
+              placeholder="描述该段落结束时的状态..."
+              rows={2}
+              style={{ ...S.input, resize: 'vertical' }}
+              aria-required="true"
+            />
+          </div>
+
+          {/* 动作编辑区域 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <label style={S.label}>
+                段落动作
+                <span style={{ color: '#999', fontWeight: 400, marginLeft: 8 }}>
+                  ({actions.length} 个)
+                </span>
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {hasExistingAction && !showActionEdit && (
+                  <button
+                    onClick={() => setShowActionEdit(true)}
+                    style={{
+                      fontSize: 11,
+                      padding: '4px 10px',
+                      background: '#f0f9ff',
+                      border: '1px solid #bae6fd',
+                      borderRadius: 3,
+                      color: '#0284c7',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    修改动作
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 显示现有动作（当不编辑时） */}
+            {hasExistingAction && !showActionEdit && (
+              <div style={{
+                padding: '10px 12px',
+                background: '#fef3c7',
+                border: '1px solid #fbbf24',
+                borderRadius: 4,
+                fontSize: 12,
+                color: '#92400e'
+              }}>
+                ⚡ {currentNode.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
+              </div>
+            )}
+
+            {/* 动作编辑表单 */}
+            {(showActionEdit || !hasExistingAction) && (
+              <div>
+                {actions.length === 0 ? (
+                  <div style={{
+                    padding: '16px',
+                    background: '#f9f9f9',
+                    border: '1px dashed #ddd',
                     borderRadius: 6,
+                    textAlign: 'center',
+                    color: '#999',
+                    fontSize: 12,
+                    marginBottom: 10
+                  }}>
+                    暂无动作
+                  </div>
+                ) : (
+                  actions.map((action, index) => (
+                    <ActionEditor
+                      key={index}
+                      index={index}
+                      action={action}
+                      availableTargets={availableTargets}
+                      actionSuggestions={getActionSuggestions(action.target)}
+                      onUpdate={(updated) => updateAction(index, updated)}
+                      onDelete={() => deleteAction(index)}
+                      canDelete={actions.length > 0}
+                    />
+                  ))
+                )}
+
+                <button
+                  onClick={addAction}
+                  style={{
+                    width: '100%',
+                    fontSize: 11,
+                    padding: '8px',
+                    background: '#f0f9ff',
+                    border: '1px solid #bae6fd',
+                    borderRadius: 4,
+                    color: '#0284c7',
                     cursor: 'pointer',
-                    border: `2px solid ${isSelected ? '#f59e0b' : '#e5e5e5'}`,
-                    background: isSelected ? '#f59e0b0d' : '#f9f7f4',
+                    fontWeight: 500,
+                    marginBottom: 10
                   }}
                 >
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                    <span style={S.pill('#f59e0b')}>{node.node_id}</span>
-                    <span style={{ fontSize: 10, color: '#888' }}>
-                      帧 {node.from_frame}→{node.to_frame}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#666' }}>
-                    {node.state_description}
-                  </div>
-                  {node.actions && node.actions.length > 0 && (
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
-                      ⚡ {node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  + 添加动作
+                </button>
 
-      {/* Meta 表单 */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={S.label}>段落 Meta</label>
-        <MetaForm
-          schema={taskSchema}
-          values={metaValues}
-          onChange={onMetaValuesChange}
-        />
-      </div>
+                {/* 取消编辑按钮 */}
+                {showActionEdit && (
+                  <button
+                    onClick={() => {
+                      setShowActionEdit(false);
+                      // 重置为原始值
+                      if (currentNode?.actions) {
+                        const initialActions = currentNode.actions.map(a => ({
+                          target: a.target,
+                          actionName: a.action_name,
+                          customActionName: '',
+                          customTarget: ''
+                        }));
+                        onActionsChange(initialActions);
+                      } else {
+                        onActionsChange([]);
+                      }
+                    }}
+                    style={{
+                      fontSize: 11,
+                      padding: '6px',
+                      background: 'transparent',
+                      border: '1px solid #ddd',
+                      borderRadius: 3,
+                      color: '#666',
+                      cursor: 'pointer',
+                      width: '100%'
+                    }}
+                  >
+                    取消修改
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 父节点选择 */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={S.label}>
+              父段落（逻辑来源）
+              {parentNodeId && (
+                <span style={{ color: '#f59e0b', marginLeft: 8, fontSize: 11 }}>
+                  {parentNodeId} → {editMark.node_id}
+                </span>
+              )}
+            </label>
+
+            {/* 根节点选项 */}
+            <div style={{ marginBottom: 10 }}>
+              <button
+                onClick={() => onParentNodeChange(null)}
+                style={{
+                  ...S.btn(!parentNodeId),
+                  width: '100%',
+                  padding: '8px',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>无父段落（起始段落）</span>
+                <span style={{ color: '#666', marginLeft: 8, fontSize: 11 }}>
+                  这是任务的起始状态
+                </span>
+              </button>
+            </div>
+
+            {/* 可选父段落列表 */}
+            {availableParentNodes.length > 0 && (
+              <div
+                style={{
+                  maxHeight: 150,
+                  overflow: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                {availableParentNodes.map((node) => {
+                  const isSelected = parentNodeId === node.node_id;
+                  return (
+                    <div
+                      key={node.node_id}
+                      onClick={() => onParentNodeChange(node.node_id)}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        border: `2px solid ${isSelected ? '#f59e0b' : '#e5e5e5'}`,
+                        background: isSelected ? '#f59e0b0d' : '#f9f7f4',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                        <span style={S.pill('#f59e0b')}>{node.node_id}</span>
+                        <span style={{ fontSize: 10, color: '#888' }}>
+                          帧 {node.from_frame}→{node.to_frame}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#666' }}>
+                        {node.state_description}
+                      </div>
+                      {node.actions && node.actions.length > 0 && (
+                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
+                          ⚡ {node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Meta 表单 */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={S.label}>段落 Meta</label>
+            <MetaForm
+              schema={taskSchema}
+              values={metaValues}
+              onChange={onMetaValuesChange}
+            />
+          </div>
+        </>
+      )}
 
       {/* 按钮组 */}
       <div style={{ display: 'flex', gap: 8 }}>
@@ -531,8 +585,18 @@ const EditModal = React.memo(function EditModal({
           取消
         </button>
         <button
-          onClick={onConfirm}
-          disabled={!stateDescription.trim()}
+          onClick={() => {
+            if (mode === 'existing' && selectedReuseNodeId) {
+              // 复用模式：调用 onSwitchNode 切换节点
+              if (onSwitchNode) {
+                onSwitchNode(selectedReuseNodeId);
+              }
+            } else {
+              // 编辑模式：正常确认
+              onConfirm();
+            }
+          }}
+          disabled={mode === 'existing' ? !selectedReuseNodeId : !stateDescription.trim()}
           style={{
             flex: 2,
             padding: '9px',
@@ -543,12 +607,12 @@ const EditModal = React.memo(function EditModal({
             fontSize: 12,
             fontFamily: 'inherit',
             fontWeight: 600,
-            cursor: stateDescription.trim() ? 'pointer' : 'not-allowed',
-            opacity: stateDescription.trim() ? 1 : 0.5,
+            cursor: (mode === 'existing' ? selectedReuseNodeId : stateDescription.trim()) ? 'pointer' : 'not-allowed',
+            opacity: (mode === 'existing' ? selectedReuseNodeId : stateDescription.trim()) ? 1 : 0.5,
           }}
-          aria-disabled={!stateDescription.trim()}
+          aria-disabled={mode === 'existing' ? !selectedReuseNodeId : !stateDescription.trim()}
         >
-          确认修改
+          {mode === 'existing' ? (selectedReuseNodeId ? '确认复用' : '请选择节点') : '确认修改'}
         </button>
       </div>
     </Modal>

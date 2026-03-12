@@ -1,6 +1,6 @@
 # VLA 任务图标注工具 - 使用手册
 
-> 机器人VLA（Vision-Language-Action）任务视频的结构化标注工具
+> VLA（Vision-Language-Action）任务视频的结构化标注工具
 
 **版本**: v1.0
 **最后更新**: 2026-03-09
