@@ -23,8 +23,10 @@ const ActionEditor = React.memo(function ActionEditor({
 }) {
   const commonActionNames = ['open', 'close', 'pick', 'place', 'push', 'pull', 'pour', 'press'];
   
-  const { target, actionName, customActionName } = action;
+  const { target, actionName, customActionName, customTarget } = action;
   const finalActionName = actionName === 'CUSTOM' ? customActionName : actionName;
+  // 判断是否显示自定义 target 输入框：target 是 CUSTOM_TARGET 或不在预设列表中
+  const isCustomTarget = target === 'CUSTOM_TARGET' || (target && !availableTargets.includes(target));
 
   return (
     <div style={{
@@ -69,12 +71,20 @@ const ActionEditor = React.memo(function ActionEditor({
           <option value="CUSTOM_TARGET">+ 自定义目标</option>
         </select>
 
-        {target === 'CUSTOM_TARGET' && (
+        {isCustomTarget && (
           <input
             type="text"
             placeholder="输入自定义目标对象..."
-            value={action.customTarget || ''}
-            onChange={(e) => onUpdate({ ...action, target: e.target.value.toLowerCase(), customTarget: e.target.value })}
+            value={customTarget || ''}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              // 实时更新 target 和 customTarget
+              onUpdate({ 
+                ...action, 
+                target: newValue.toLowerCase(),
+                customTarget: newValue 
+              });
+            }}
             style={{ ...S.input, marginTop: 6 }}
             autoFocus
           />
@@ -182,20 +192,23 @@ const MarkModal = React.memo(function MarkModal({
   // 本地状态：动作列表
   const [actions, setActions] = useState([]);
 
-  // 获取段落范围信息
+  // 获取段落范围信息（考虑初始帧设置）
+  const { getInitialFrame, fps } = useVideoStore();
   const lastSegment = useMemo(() => {
     if (!currentVideoId) return null;
     return getLastSegment(currentVideoId);
   }, [currentVideoId, getLastSegment, nodes]);
 
-  const fromFrame = lastSegment ? lastSegment.to_frame : 0;
-  const fromTimestamp = lastSegment ? lastSegment.to_timestamp : 0;
+  // 计算起始帧：有上一段用上一段结束，无则用初始帧
+  const initialFrame = getInitialFrame(currentVideoId);
+  const fromFrame = lastSegment ? lastSegment.to_frame : initialFrame;
+  const fromTimestamp = lastSegment ? lastSegment.to_timestamp : (initialFrame / (fps || 30));
 
   // 获取可用的targets
   const availableTargets = useMemo(() => {
     const taskActions = actionLib[taskType] || [];
     const targets = [...new Set(taskActions.map(a => a.target).filter(Boolean))];
-    const commonTargets = ['drawer', 'red_mug', 'coffee_machine', 'water_tap', 'cabinet', 'plate'];
+    const commonTargets = ['drawer', 'red_mug', 'coffee_machine', 'water_tap', 'cabinet', 'plate','teapot'];
     return [...new Set([...targets, ...commonTargets])].sort();
   }, [actionLib, taskType]);
 

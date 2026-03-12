@@ -18,8 +18,10 @@ const ActionEditor = React.memo(function ActionEditor({
 }) {
   const commonActionNames = ['open', 'close', 'pick', 'place', 'push', 'pull', 'pour', 'press'];
   
-  const { target, actionName, customActionName } = action;
+  const { target, actionName, customActionName, customTarget } = action;
   const finalActionName = actionName === 'CUSTOM' ? customActionName : actionName;
+  // 判断是否显示自定义 target 输入框
+  const isCustomTarget = target === 'CUSTOM_TARGET' || (target && !availableTargets.includes(target));
 
   return (
     <div style={{
@@ -64,12 +66,19 @@ const ActionEditor = React.memo(function ActionEditor({
           <option value="CUSTOM_TARGET">+ 自定义目标</option>
         </select>
 
-        {target === 'CUSTOM_TARGET' && (
+        {isCustomTarget && (
           <input
             type="text"
             placeholder="输入自定义目标对象..."
-            value={action.customTarget || ''}
-            onChange={(e) => onUpdate({ ...action, target: e.target.value.toLowerCase(), customTarget: e.target.value })}
+            value={customTarget || ''}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              onUpdate({ 
+                ...action, 
+                target: newValue.toLowerCase(),
+                customTarget: newValue 
+              });
+            }}
             style={{ ...S.input, marginTop: 6 }}
             autoFocus
           />
