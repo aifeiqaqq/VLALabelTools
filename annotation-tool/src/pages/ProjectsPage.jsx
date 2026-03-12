@@ -201,6 +201,37 @@ const ProjectsPage = React.memo(function ProjectsPage({ onOpenProject, onCreateN
           </span>
         </label>
 
+        <button onClick={async () => {
+          // 详细存储诊断
+          const estimate = await navigator.storage?.estimate?.() || {};
+          const videoInfo = await getTotalVideoSize().catch(() => ({ bytes: 0, formatted: '0 B', count: 0 }));
+          const allProjects = await listProjects().catch(() => []);
+          
+          let totalVideoBytes = 0;
+          for (const p of allProjects) {
+            const vids = await getVideosByProject(p.id).catch(() => []);
+            totalVideoBytes += vids.reduce((sum, v) => sum + (v.size || 0), 0);
+          }
+          
+          alert(`存储诊断报告:
+
+总存储空间: ${(estimate.quota / 1024 / 1024).toFixed(2)} MB
+已使用: ${(estimate.usage / 1024 / 1024).toFixed(2)} MB (${((estimate.usage / estimate.quota) * 100).toFixed(1)}%)
+
+视频文件:
+  - 数量: ${videoInfo.count} 个
+  - 大小: ${videoInfo.formatted}
+  - IndexedDB 记录: ${(totalVideoBytes / 1024 / 1024).toFixed(2)} MB
+
+项目数量: ${allProjects.length} 个
+
+如果视频被覆盖或标注残留，请尝试:
+1. 删除旧项目释放空间
+2. 刷新页面后重新导入视频`);
+        }} style={{ padding: '8px 16px', background: 'transparent', color: '#666', border: '1px solid #d5d5d5', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}>
+          🔍 存储诊断
+        </button>
+
         {importError && <div style={{ color: '#ef4444', fontSize: 12, display: 'flex', alignItems: 'center' }}>导入失败: {importError}</div>}
       </div>
 

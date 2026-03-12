@@ -218,6 +218,31 @@ export const useAnnotationStore = create((set, get) => ({
     }
   })),
 
+  // 删除视频的所有标注数据（marks 和 nodes 中的 video_segments）
+  deleteVideoAnnotations: (videoId) => set((state) => {
+    // 1. 删除该视频的所有 marks
+    const { [videoId]: _, ...remainingMarks } = state.marks;
+    
+    // 2. 从所有 nodes 中删除该视频的 video_segments
+    const updatedNodes = {};
+    Object.entries(state.nodes).forEach(([nodeId, node]) => {
+      const { [videoId]: removedSegment, ...remainingSegments } = node.video_segments || {};
+      // 如果节点还有其他视频的段落，保留节点；否则删除整个节点
+      if (Object.keys(remainingSegments).length > 0) {
+        updatedNodes[nodeId] = {
+          ...node,
+          video_segments: remainingSegments
+        };
+      }
+      // 如果没有剩余段落，则不添加到 updatedNodes（即删除）
+    });
+    
+    return {
+      marks: remainingMarks,
+      nodes: updatedNodes
+    };
+  }),
+
   // ===== Actions - Action Library =====
 
   addActionLibEntry: (taskType, entry) => set((state) => ({

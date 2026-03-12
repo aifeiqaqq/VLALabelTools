@@ -150,6 +150,7 @@ function AnnotationPage({ projectId, onBack }) {
     addActionLibEntry,
     deleteActionLibEntry,
     incrementActionUseCount,
+    deleteVideoAnnotations,
   } = useAnnotationStore(
     useShallow((s) => ({
       nodes: s.nodes,
@@ -162,6 +163,7 @@ function AnnotationPage({ projectId, onBack }) {
       addActionLibEntry: s.addActionLibEntry,
       deleteActionLibEntry: s.deleteActionLibEntry,
       incrementActionUseCount: s.incrementActionUseCount,
+      deleteVideoAnnotations: s.deleteVideoAnnotations,
     }))
   );
 
@@ -342,10 +344,10 @@ function AnnotationPage({ projectId, onBack }) {
     setUploadProgress(0);
 
     try {
-      // Generate unique video ID - 使用随机数避免删除后重复
-      const nextIndex = videos.length + 1;
-      const randomSuffix = Math.random().toString(36).substr(2, 6);
-      const videoId = `v${nextIndex}_${randomSuffix}`;
+      // Generate unique video ID - 使用时间戳+随机数确保唯一
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substr(2, 9);
+      const videoId = `v${timestamp}_${randomSuffix}`;
 
       // 1. Save video file to OPFS
       setUploadProgress(10);
@@ -409,10 +411,16 @@ function AnnotationPage({ projectId, onBack }) {
     if (!videoId) return;
     
     try {
-      // 1. 从 IndexedDB 删除视频记录
+      // 1. 释放 Blob URL 避免内存泄漏
+      const videoToDelete = videos.find(v => v.id === videoId);
+      if (videoToDelete?.url) {
+        URL.revokeObjectURL(videoToDelete.url);
+      }
+      
+      // 2. 从 IndexedDB 删除视频记录
       await deleteVideo(videoId);
       
-      // 2. 从 OPFS 删除视频文件
+      // 3. 从 OPFS 删除视频文件
       try {
         await deleteVideoFile(videoId);
       } catch (fileErr) {
@@ -420,15 +428,18 @@ function AnnotationPage({ projectId, onBack }) {
         console.warn('删除视频文件失败:', fileErr);
       }
       
-      // 3. 从 store 中移除
+      // 4. 删除该视频的所有标注数据
+      deleteVideoAnnotations(videoId);
+      
+      // 5. 从 store 中移除视频
       removeVideo(videoId);
       
-      console.log('视频删除成功:', videoId);
+      console.log('视频及其标注数据删除成功:', videoId);
     } catch (error) {
       console.error('删除视频失败:', error);
       alert('删除视频失败: ' + error.message);
     }
-  }, [removeVideo]);
+  }, [removeVideo, deleteVideoAnnotations, videos]);
 
   // === Render Tab Content ===
   const renderTabContent = () => {
