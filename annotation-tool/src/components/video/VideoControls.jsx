@@ -45,13 +45,15 @@ const VideoControls = React.memo(function VideoControls({
   }, []);
 
   // Schedule seek via RAF (smooth performance)
+  // Use a longer threshold for HEVC/H.265 videos in Firefox to avoid decoder errors
   const scheduleSeek = useCallback((frame) => {
     if (rafIdRef.current) {
       cancelAnimationFrame(rafIdRef.current);
     }
     
     // Only seek if frame changed significantly (reduces seeks)
-    if (Math.abs(frame - lastSeekFrameRef.current) >= 2) {
+    // Increase threshold to 5 frames during drag to reduce decoder pressure
+    if (Math.abs(frame - lastSeekFrameRef.current) >= 5) {
       rafIdRef.current = requestAnimationFrame(() => {
         lastSeekFrameRef.current = frame;
         if (seekFrameFast) {
@@ -85,10 +87,11 @@ const VideoControls = React.memo(function VideoControls({
     const finalFrame = sliderValue;
     lastSeekFrameRef.current = finalFrame;
     
-    if (endSeek) {
-      endSeek(finalFrame);
-    } else if (seekFrame) {
+    // Use seekFrame for final position to ensure accuracy
+    if (seekFrame) {
       seekFrame(finalFrame);
+    } else if (endSeek) {
+      endSeek(finalFrame);
     }
   }, [sliderValue, endSeek, seekFrame]);
 

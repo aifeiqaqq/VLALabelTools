@@ -128,27 +128,57 @@ export function useVideoPlayer(videoRef) {
     const time = Math.max(0, Math.min(frame / fpsRef.current, v.duration || 0));
     
     return new Promise((resolve) => {
+      let resolved = false;
       const onSeek = () => {
+        if (resolved) return;
+        resolved = true;
         v.removeEventListener("seeked", onSeek);
+        v.removeEventListener("error", onError);
         isSeekingRef.current = false;
         const actualFrame = Math.round(v.currentTime * fpsRef.current);
         setLocalState(prev => ({ ...prev, currentFrame: actualFrame }));
         setCurrentFrame(actualFrame);
         resolve(actualFrame);
       };
+      const onError = () => {
+        if (resolved) return;
+        resolved = true;
+        v.removeEventListener("seeked", onSeek);
+        v.removeEventListener("error", onError);
+        isSeekingRef.current = false;
+        console.warn('Seek operation failed');
+        resolve(Math.round(v.currentTime * fpsRef.current));
+      };
       v.addEventListener("seeked", onSeek, { once: true });
-      v.currentTime = time;
+      v.addEventListener("error", onError, { once: true });
+      
+      try {
+        v.currentTime = time;
+      } catch (err) {
+        onError();
+      }
     });
   }, [videoRef, setCurrentFrame]);
 
   // Fast seek for dragging (no Promise, just update time)
+  // Throttled to avoid decoder errors in Firefox with HEVC/H.265
   const seekFrameFast = useCallback((frame) => {
     const v = videoRef.current;
-    if (!v || totalFramesRef.current === 0) return;
+    if (!v || totalFramesRef.current === 0 || v.seeking) return;
 
     isSeekingRef.current = true;
     const time = Math.max(0, Math.min(frame / fpsRef.current, v.duration || 0));
-    v.currentTime = time;
+    
+    // Check if time difference is significant enough to seek
+    // This prevents unnecessary seeks that can stress the decoder
+    if (Math.abs(v.currentTime - time) > 0.1) {
+      try {
+        v.currentTime = time;
+      } catch (err) {
+        // Firefox may throw errors with HEVC during rapid seeking
+        console.warn('Seek error:', err);
+      }
+    }
     
     // Update local state immediately for responsive UI
     setLocalState(prev => ({ ...prev, currentFrame: frame }));

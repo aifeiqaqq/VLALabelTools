@@ -9,8 +9,8 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useVideoPlayer } from "../hooks/useVideoPlayer";
 import { usePersistence } from "../hooks/usePersistence";
 import { exportJson, exportProjectJson, exportProjectGraphMeta } from "../utils/exportUtils";
-import { saveVideo } from "../utils/db";
-import { saveVideoFile, extractVideoMetadata, getVideoFile } from "../utils/localFs";
+import { saveVideo, deleteVideo } from "../utils/db";
+import { saveVideoFile, extractVideoMetadata, getVideoFile, deleteVideoFile } from "../utils/localFs";
 import TopBar from "../components/layout/TopBar";
 import TabBar from "../components/layout/TabBar";
 import AnnotateTab from "../components/tabs/AnnotateTab";
@@ -32,8 +32,6 @@ import LibraryTab from "../components/tabs/LibraryTab";
  * - UI state: Zustand (activeTab)
  */
 function AnnotationPage({ projectId, onBack }) {
-  console.log('[Debug] AnnotationPage 渲染, projectId:', projectId);
-
   // === Refs (stable, no re-renders) ===
   const videoRef = React.useRef(null);
   const canvasRef = React.useRef(null);
@@ -59,6 +57,7 @@ function AnnotationPage({ projectId, onBack }) {
     setCurrentVideo,
     addVideo,
     updateVideoFile,
+    removeVideo,
   } = useVideoStore(
     useShallow((s) => ({
       videos: s.videos,
@@ -66,19 +65,13 @@ function AnnotationPage({ projectId, onBack }) {
       setCurrentVideo: s.switchVideo,
       addVideo: s.addVideo,
       updateVideoFile: s.updateVideoFile,
+      removeVideo: s.removeVideo,
     }))
   );
 
   // Memoized current video (stable reference) - 必须先定义
   const currentVideo = useMemo(() => {
-    const video = videos.find((v) => v.id === currentVideoId) || null;
-    console.log('[Debug] currentVideo 计算:', { 
-      videosCount: videos.length, 
-      currentVideoId, 
-      found: !!video,
-      videoUrl: video?.url ? '存在' : '不存在'
-    });
-    return video;
+    return videos.find((v) => v.id === currentVideoId) || null;
   }, [videos, currentVideoId]);
   
   // 缺失视频检测和重新选择
@@ -219,8 +212,6 @@ function AnnotationPage({ projectId, onBack }) {
   }, []);
   
   const isLoading = isInitializing;
-  
-  console.log('[Debug] AnnotationPage 状态:', { isLoading, isInitializing });
 
   // === Stable Callbacks ===
   const handleSelectVideo = useCallback((videoId) => {
@@ -413,9 +404,34 @@ function AnnotationPage({ projectId, onBack }) {
     }
   }, [projectId, addVideo, setCurrentVideo]);
 
+  // === Delete Video Handler ===
+  const handleDeleteVideo = useCallback(async (videoId) => {
+    if (!videoId) return;
+    
+    try {
+      // 1. 从 IndexedDB 删除视频记录
+      await deleteVideo(videoId);
+      
+      // 2. 从 OPFS 删除视频文件
+      try {
+        await deleteVideoFile(videoId);
+      } catch (fileErr) {
+        // 文件可能已不存在，忽略错误
+        console.warn('删除视频文件失败:', fileErr);
+      }
+      
+      // 3. 从 store 中移除
+      removeVideo(videoId);
+      
+      console.log('视频删除成功:', videoId);
+    } catch (error) {
+      console.error('删除视频失败:', error);
+      alert('删除视频失败: ' + error.message);
+    }
+  }, [removeVideo]);
+
   // === Render Tab Content ===
   const renderTabContent = () => {
-    console.log('[Debug] renderTabContent, activeTab:', activeTab, 'videoUrl:', currentVideo?.url ? '存在' : '不存在');
     switch (activeTab) {
       case "annotate":
         return (
@@ -517,6 +533,7 @@ function AnnotationPage({ projectId, onBack }) {
         onVideoChange={handleSelectVideo}
         onBack={onBack}
         onAddVideo={handleAddVideo}
+        onDeleteVideo={handleDeleteVideo}
       />
       <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
       <div style={{
