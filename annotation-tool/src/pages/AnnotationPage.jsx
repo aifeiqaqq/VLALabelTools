@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useRef, useState } from "react";
+import React, { useMemo, useCallback, useRef, useState, useEffect } from "react";
 import { useShallow } from "zustand/shallow";
 import { useUIStore } from "../stores/uiStore";
 import { useVideoStore } from "../stores/videoStore";
@@ -10,7 +10,7 @@ import { useVideoPlayer } from "../hooks/useVideoPlayer";
 import { usePersistence } from "../hooks/usePersistence";
 import { exportJson, exportProjectJson, exportProjectGraphMeta } from "../utils/exportUtils";
 import { saveVideo } from "../utils/db";
-import { saveVideoFile, extractVideoMetadata } from "../utils/localFs";
+import { saveVideoFile, extractVideoMetadata, getVideoFile } from "../utils/localFs";
 import TopBar from "../components/layout/TopBar";
 import TabBar from "../components/layout/TabBar";
 import AnnotateTab from "../components/tabs/AnnotateTab";
@@ -58,16 +58,18 @@ function AnnotationPage({ projectId, onBack }) {
     currentVideoId,
     setCurrentVideo,
     addVideo,
+    updateVideoFile,
   } = useVideoStore(
     useShallow((s) => ({
       videos: s.videos,
       currentVideoId: s.currentVideoId,
       setCurrentVideo: s.switchVideo,
       addVideo: s.addVideo,
+      updateVideoFile: s.updateVideoFile,
     }))
   );
 
-  // Memoized current video (stable reference)
+  // Memoized current video (stable reference) - 必须先定义
   const currentVideo = useMemo(() => {
     const video = videos.find((v) => v.id === currentVideoId) || null;
     console.log('[Debug] currentVideo 计算:', { 
@@ -78,6 +80,70 @@ function AnnotationPage({ projectId, onBack }) {
     });
     return video;
   }, [videos, currentVideoId]);
+  
+  // 缺失视频检测和重新选择
+  const [missingVideoPrompt, setMissingVideoPrompt] = useState(null);
+  const missingVideoInputRef = useRef(null);
+  
+  // 检测当前视频是否文件缺失 (使用 useEffect 因为涉及副作用)
+  useEffect(() => {
+    if (currentVideo?.fileMissing) {
+      setMissingVideoPrompt(currentVideo);
+    } else {
+      setMissingVideoPrompt(null);
+    }
+  }, [currentVideo]);
+  
+  // 处理重新选择视频文件
+  const handleReselectVideo = useCallback(async (file) => {
+    if (!missingVideoPrompt) return;
+    
+    const videoId = missingVideoPrompt.id;
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    try {
+      // 保存视频文件到 OPFS
+      await saveVideoFile(file, videoId, (loaded, total) => {
+        setUploadProgress(Math.round((loaded / total) * 100));
+      });
+      
+      // 提取元数据
+      const metadata = await extractVideoMetadata(file);
+      
+      // 更新视频存储
+      const url = URL.createObjectURL(file);
+      updateVideoFile(videoId, {
+        url,
+        width: metadata.width,
+        height: metadata.height,
+        duration: metadata.duration,
+        fps: metadata.fps,
+        totalFrames: metadata.totalFrames,
+      });
+      
+      // 更新数据库
+      await saveVideo({
+        ...missingVideoPrompt,
+        url,
+        width: metadata.width,
+        height: metadata.height,
+        duration: metadata.duration,
+        fps: metadata.fps,
+        totalFrames: metadata.totalFrames,
+        fileMissing: false,
+      });
+      
+      setMissingVideoPrompt(null);
+      console.log('视频文件重新选择成功:', file.name);
+    } catch (error) {
+      console.error('重新选择视频失败:', error);
+      alert('重新选择视频失败: ' + error.message);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  }, [missingVideoPrompt, updateVideoFile]);
 
   // === Annotation Store (useShallow for object state) ===
   const {
@@ -457,6 +523,60 @@ function AnnotationPage({ projectId, onBack }) {
         overflow: 'hidden',
         position: 'relative'
       }}>
+        {/* 缺失视频提示 */}
+        {missingVideoPrompt && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(250, 248, 245, 0.98)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            gap: 20,
+            padding: 40
+          }}>
+            <div style={{ fontSize: 48 }}>📹</div>
+            <div style={{ fontSize: 18, color: '#333', fontWeight: 600 }}>
+              需要重新选择视频文件
+            </div>
+            <div style={{ fontSize: 14, color: '#666', textAlign: 'center', maxWidth: 400 }}>
+              当前视频 "{missingVideoPrompt.name}" 的文件未找到。<br/>
+              这可能是从其他设备导入的项目，请重新选择对应的视频文件。
+            </div>
+            <input
+              ref={missingVideoInputRef}
+              type="file"
+              accept="video/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleReselectVideo(file);
+                e.target.value = '';
+              }}
+              style={{ display: 'none' }}
+            />
+            <button
+              onClick={() => missingVideoInputRef.current?.click()}
+              style={{
+                padding: '12px 24px',
+                background: '#f59e0b',
+                color: '#000',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer'
+              }}
+            >
+              选择视频文件
+            </button>
+          </div>
+        )}
+        
         {isUploading && (
           <div style={{
             position: 'absolute',

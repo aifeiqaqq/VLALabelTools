@@ -8,47 +8,69 @@ const DB_NAME = 'VLAAnnotationDB';
 const DB_VERSION = 2;  // 升级版本号
 
 /**
+ * 检查浏览器是否支持 IndexedDB
+ */
+const checkIndexedDBSupport = () => {
+  if (!window.indexedDB) {
+    throw new Error('您的浏览器不支持 IndexedDB，请使用 Chrome、Edge 或 Firefox 最新版');
+  }
+};
+
+/**
  * 初始化数据库
  */
 export const initDB = () => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    try {
+      checkIndexedDBSupport();
+      
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+      request.onerror = () => {
+        console.error('IndexedDB 打开失败:', request.error);
+        reject(new Error('无法打开本地数据库，请检查浏览器存储权限'));
+      };
+      
+      request.onsuccess = () => {
+        console.log('IndexedDB 初始化成功');
+        resolve(request.result);
+      };
 
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      const oldVersion = event.oldVersion;
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        const oldVersion = event.oldVersion;
 
-      // 项目存储（包含会话信息和元数据）
-      if (!db.objectStoreNames.contains('projects')) {
-        const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
-        projectStore.createIndex('updatedAt', 'updatedAt', { unique: false });
-        projectStore.createIndex('annotatorId', 'annotatorId', { unique: false });
-      }
+        // 项目存储（包含会话信息和元数据）
+        if (!db.objectStoreNames.contains('projects')) {
+          const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
+          projectStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          projectStore.createIndex('annotatorId', 'annotatorId', { unique: false });
+        }
 
-      // 视频存储（多视频支持）
-      if (!db.objectStoreNames.contains('videos')) {
-        const videoStore = db.createObjectStore('videos', { keyPath: 'id' });
-        videoStore.createIndex('projectId', 'projectId', { unique: false });
-      }
+        // 视频存储（多视频支持）
+        if (!db.objectStoreNames.contains('videos')) {
+          const videoStore = db.createObjectStore('videos', { keyPath: 'id' });
+          videoStore.createIndex('projectId', 'projectId', { unique: false });
+        }
 
-      // 标注数据存储（按项目分组，内部按视频分组）
-      if (!db.objectStoreNames.contains('annotations')) {
-        db.createObjectStore('annotations', { keyPath: 'projectId' });
-      }
+        // 标注数据存储（按项目分组，内部按视频分组）
+        if (!db.objectStoreNames.contains('annotations')) {
+          db.createObjectStore('annotations', { keyPath: 'projectId' });
+        }
 
-      // 动作库存储
-      if (!db.objectStoreNames.contains('actionLibrary')) {
-        db.createObjectStore('actionLibrary', { keyPath: 'taskType' });
-      }
+        // 动作库存储
+        if (!db.objectStoreNames.contains('actionLibrary')) {
+          db.createObjectStore('actionLibrary', { keyPath: 'taskType' });
+        }
 
-      // 数据迁移（从旧版本）
-      if (oldVersion < 2) {
-        console.log('数据库升级：支持多视频');
-      }
-    };
+        // 数据迁移（从旧版本）
+        if (oldVersion < 2) {
+          console.log('数据库升级：支持多视频');
+        }
+      };
+    } catch (error) {
+      reject(error);
+    }
   });
 };
 
@@ -272,7 +294,7 @@ export const importProject = async (data) => {
     createdAt: new Date().toISOString(),
   });
 
-  // 保存视频（生成新ID）
+  // 保存视频（生成新ID，标记文件缺失）
   if (data.videos) {
     for (const video of data.videos) {
       const newVideoId = `video_${newProjectId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -282,6 +304,8 @@ export const importProject = async (data) => {
         ...video,
         id: newVideoId,
         projectId: newProjectId,
+        fileMissing: true,  // 标记视频文件需要重新选择
+        url: null,  // 清除旧URL
       });
     }
   }

@@ -17,10 +17,12 @@ const ProjectsPage = React.memo(function ProjectsPage({ onOpenProject, onCreateN
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [importError, setImportError] = useState(null);
   const [expandedProject, setExpandedProject] = useState(null); // 展开显示视频列表
+  const [dbError, setDbError] = useState(null); // 数据库错误
 
   // 加载项目列表
   const loadProjects = useCallback(async () => {
     setIsLoading(true);
+    setDbError(null);
     try {
       const [projectList, storage, videos] = await Promise.all([
         listProjects(),
@@ -41,6 +43,7 @@ const ProjectsPage = React.memo(function ProjectsPage({ onOpenProject, onCreateN
       setProjectVideos(videosMap);
     } catch (error) {
       console.error('加载项目列表失败:', error);
+      setDbError(error.message || '无法访问本地存储，请检查浏览器权限');
     } finally {
       setIsLoading(false);
     }
@@ -201,17 +204,118 @@ const ProjectsPage = React.memo(function ProjectsPage({ onOpenProject, onCreateN
         {importError && <div style={{ color: '#ef4444', fontSize: 12, display: 'flex', alignItems: 'center' }}>导入失败: {importError}</div>}
       </div>
 
+      {/* Database Error */}
+      {dbError && (
+        <div style={{ 
+          margin: '20px 32px', 
+          padding: '16px 20px', 
+          background: '#fef2f2', 
+          border: '1px solid #ef4444', 
+          borderRadius: 6,
+          color: '#dc2626',
+          fontSize: 14 
+        }}>
+          <strong>⚠️ 数据库访问错误</strong>
+          <div style={{ marginTop: 8, color: '#991b1b' }}>{dbError}</div>
+          <div style={{ marginTop: 12, fontSize: 12, color: '#7f1d1d' }}>
+            建议：尝试刷新页面，或使用 Chrome/Edge 浏览器的最新版本
+          </div>
+        </div>
+      )}
+
       {/* Project List */}
       <div style={{ padding: '24px 32px' }}>
         {isLoading ? (
           <div style={{ color: '#666', textAlign: 'center', padding: 60 }}>加载中...</div>
         ) : projects.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 80 }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📁</div>
-            <div style={{ color: '#666', fontSize: 14, marginBottom: 24 }}>还没有标注项目</div>
-            <button onClick={onCreateNew} style={{ padding: '10px 20px', background: '#f59e0b', color: '#000', border: 'none', borderRadius: 4, fontSize: 14, cursor: 'pointer' }}>
-              创建第一个项目
+          <div style={{ textAlign: 'center', padding: '60px 40px' }}>
+            <div style={{ fontSize: 64, marginBottom: 24 }}>🎬</div>
+            <div style={{ color: '#333', fontSize: 20, fontWeight: 600, marginBottom: 12 }}>
+              欢迎使用 VLA 标注工具
+            </div>
+            <div style={{ color: '#666', fontSize: 14, marginBottom: 32, maxWidth: 480, margin: '0 auto 32px', lineHeight: 1.6 }}>
+              这是一个用于机器人 VLA（Vision-Language-Action）任务视频的结构化标注工具。
+              <br/><br/>
+              开始之前，请准备一个视频文件（MP4格式）。
+            </div>
+            
+            {/* 快速开始步骤 */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              gap: 32, 
+              marginBottom: 40,
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ textAlign: 'center', width: 120 }}>
+                <div style={{ 
+                  width: 48, height: 48, 
+                  background: '#f0ede8', 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  margin: '0 auto 12px',
+                  fontSize: 20 
+                }}>1</div>
+                <div style={{ fontSize: 12, color: '#666' }}>创建项目</div>
+              </div>
+              <div style={{ textAlign: 'center', width: 120 }}>
+                <div style={{ 
+                  width: 48, height: 48, 
+                  background: '#f0ede8', 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  margin: '0 auto 12px',
+                  fontSize: 20 
+                }}>2</div>
+                <div style={{ fontSize: 12, color: '#666' }}>选择视频</div>
+              </div>
+              <div style={{ textAlign: 'center', width: 120 }}>
+                <div style={{ 
+                  width: 48, height: 48, 
+                  background: '#f0ede8', 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  margin: '0 auto 12px',
+                  fontSize: 20 
+                }}>3</div>
+                <div style={{ fontSize: 12, color: '#666' }}>开始标注</div>
+              </div>
+            </div>
+            
+            <button 
+              onClick={onCreateNew} 
+              style={{ 
+                padding: '14px 32px', 
+                background: '#f59e0b', 
+                color: '#000', 
+                border: 'none', 
+                borderRadius: 6, 
+                fontSize: 16, 
+                fontWeight: 500,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)'
+              }}
+            >
+              🚀 创建第一个项目
             </button>
+            
+            <div style={{ marginTop: 24, fontSize: 12, color: '#999' }}>
+              或者 <label style={{ cursor: 'pointer', color: '#f59e0b', textDecoration: 'underline' }}>
+                <input 
+                  type="file" 
+                  accept=".json" 
+                  onChange={handleImport} 
+                  style={{ display: 'none' }} 
+                />
+                导入已有项目
+              </label>
+            </div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

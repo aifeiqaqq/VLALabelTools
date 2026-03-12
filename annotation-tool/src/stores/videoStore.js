@@ -72,6 +72,15 @@ export const useVideoStore = create((set, get) => ({
   
   // 设置当前视频ID（初始化时使用）
   setCurrentVideoId: (videoId) => set({ currentVideoId: videoId }),
+  
+  // 更新视频文件（用于重新选择缺失的视频）
+  updateVideoFile: (videoId, fileData) => set((state) => ({
+    videos: state.videos.map(v => 
+      v.id === videoId 
+        ? { ...v, ...fileData, fileMissing: false }
+        : v
+    ),
+  })),
 
   // ===== Actions - Playback State =====
   
