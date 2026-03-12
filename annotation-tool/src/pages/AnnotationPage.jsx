@@ -351,9 +351,10 @@ function AnnotationPage({ projectId, onBack }) {
     setUploadProgress(0);
 
     try {
-      // Generate IDs - 使用简短的递增序号
+      // Generate unique video ID - 使用随机数避免删除后重复
       const nextIndex = videos.length + 1;
-      const videoId = `v${nextIndex}`;
+      const randomSuffix = Math.random().toString(36).substr(2, 6);
+      const videoId = `v${nextIndex}_${randomSuffix}`;
 
       // 1. Save video file to OPFS
       setUploadProgress(10);

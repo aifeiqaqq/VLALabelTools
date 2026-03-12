@@ -60,7 +60,8 @@ export const filterVideoFiles = (fileList) => {
  * @returns {Promise<{videoId: string, metadata: object, videoUrl: string}>}
  */
 export const processSingleVideo = async (file, projectId, videoIndex, onProgress = null) => {
-  const videoId = `v${videoIndex}`;
+  const randomSuffix = Math.random().toString(36).substr(2, 6);
+  const videoId = `v${videoIndex}_${randomSuffix}`;
 
   // 1. 保存视频文件到OPFS
   await saveVideoFile(file, videoId, onProgress);
