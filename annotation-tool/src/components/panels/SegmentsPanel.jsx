@@ -158,21 +158,32 @@ const SegmentsPanel = React.memo(function SegmentsPanel({ nodes, onEdit, onDelet
                 {/* Meta */}
                 {node.node_meta && Object.keys(node.node_meta).length > 0 && (
                   <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {Object.entries(node.node_meta).map(([k, v]) => v && (
-                      <span
-                        key={k}
-                        style={{
-                          fontSize: 11,
-                          color: "#666",
-                          background: "#ffffff",
-                          padding: "3px 8px",
-                          borderRadius: 3,
-                          border: "1px solid #d5d5d5"
-                        }}
-                      >
-                        {k}:{v}
-                      </span>
-                    ))}
+                    {Object.entries(node.node_meta)
+                      .filter(([k]) => k !== 'imported_at')  // 过滤掉imported_at
+                      .map(([k, v]) => {
+                        if (!v) return null;
+
+                        // suggested_parents使用特殊样式
+                        const isSuggestedParent = k === 'suggested_parents';
+
+                        return (
+                          <span
+                            key={k}
+                            style={{
+                              fontSize: 11,
+                              color: isSuggestedParent ? "#8b5cf6" : "#666",
+                              background: isSuggestedParent ? "#f5f3ff" : "#ffffff",
+                              padding: "3px 8px",
+                              borderRadius: 3,
+                              border: isSuggestedParent ? "1px solid #c4b5fd" : "1px solid #d5d5d5",
+                              fontWeight: isSuggestedParent ? 500 : 400
+                            }}
+                            title={isSuggestedParent ? "导入时建议的父节点" : undefined}
+                          >
+                            {isSuggestedParent ? `建议父节点: ${v}` : `${k}:${v}`}
+                          </span>
+                        );
+                      })}
                   </div>
                 )}
               </div>

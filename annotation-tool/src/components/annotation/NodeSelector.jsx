@@ -83,23 +83,32 @@ const NodeSelector = React.memo(function NodeSelector({
                     flexWrap: 'wrap',
                   }}
                 >
-                  {Object.entries(node.node_meta).map(
-                    ([key, value]) =>
-                      value && (
+                  {Object.entries(node.node_meta)
+                    .filter(([key]) => key !== 'imported_at')  // 过滤掉imported_at
+                    .map(([key, value]) => {
+                      if (!value) return null;
+
+                      // suggested_parents使用特殊样式
+                      const isSuggestedParent = key === 'suggested_parents';
+
+                      return (
                         <span
                           key={key}
                           style={{
                             fontSize: 10,
-                            color: '#555',
-                            background: '#141414',
-                            padding: '1px 5px',
-                            borderRadius: 2,
+                            color: isSuggestedParent ? '#8b5cf6' : '#666',
+                            background: isSuggestedParent ? '#f5f3ff' : '#ffffff',
+                            padding: '2px 6px',
+                            borderRadius: 3,
+                            border: isSuggestedParent ? '1px solid #c4b5fd' : '1px solid #e5e5e5',
+                            fontWeight: isSuggestedParent ? 500 : 400
                           }}
+                          title={isSuggestedParent ? "导入时建议的父节点" : undefined}
                         >
-                          {key}:{value}
+                          {isSuggestedParent ? `建议父节点: ${value}` : `${key}:${value}`}
                         </span>
-                      )
-                  )}
+                      );
+                    })}
                 </div>
               )}
             </div>

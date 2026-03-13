@@ -126,7 +126,12 @@ const ProjectsPage = React.memo(function ProjectsPage({ onOpenProject, onCreateN
       } catch (parseErr) {
         throw new Error('文件不是有效的 JSON 格式，请确保导入的是通过「导出备份」生成的 .json 文件');
       }
-      
+
+      // 检测 Meta JSON 格式
+      if (data.nodes && Array.isArray(data.nodes) && !data.project) {
+        throw new Error('检测到这是Meta JSON文件（节点库）。\n\n请在标注页面使用"📚 导入节点库"按钮导入此文件。\n\n步骤：\n1. 创建或打开一个项目\n2. 在标注页面顶部找到"📚 导入节点库"按钮\n3. 选择此Meta JSON文件');
+      }
+
       // 验证必要字段（兼容两种格式）
       if (!data.project) {
         throw new Error('缺少 project 字段，请确保导入的是正确的项目备份文件');

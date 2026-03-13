@@ -9,6 +9,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useVideoPlayer } from "../hooks/useVideoPlayer";
 import { usePersistence } from "../hooks/usePersistence";
 import { exportJson, exportProjectJson, exportProjectGraphMeta } from "../utils/exportUtils";
+import { importNodeLibrary } from "../utils/metaImport";
 import { saveVideo, deleteVideo } from "../utils/db";
 import { saveVideoFile, extractVideoMetadata, getVideoFile, deleteVideoFile } from "../utils/localFs";
 import TopBar from "../components/layout/TopBar";
@@ -40,6 +41,8 @@ function AnnotationPage({ projectId, onBack }) {
   // === Local state for video upload ===
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingFileName, setUploadingFileName] = useState('');
+  const [uploadStats, setUploadStats] = useState({ current: 0, total: 0 });
 
   // === UI Store (primitive selectors - stable) ===
   const activeTab = useUIStore((s) => s.activeTab);
@@ -77,7 +80,10 @@ function AnnotationPage({ projectId, onBack }) {
   // 缺失视频检测和重新选择
   const [missingVideoPrompt, setMissingVideoPrompt] = useState(null);
   const missingVideoInputRef = useRef(null);
-  
+
+  // Meta JSON导入
+  const metaFileInputRef = useRef(null);
+
   // 检测当前视频是否文件缺失 (使用 useEffect 因为涉及副作用)
   useEffect(() => {
     if (currentVideo?.fileMissing) {
@@ -319,86 +325,170 @@ function AnnotationPage({ projectId, onBack }) {
     }
   }, [projectId, sceneId, nodes]);
 
+  // === Import Meta JSON Handler ===
+  const handleImportMeta = useCallback(async () => {
+    metaFileInputRef.current?.click();
+  }, []);
+
+  const handleMetaFileChange = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      // 1. Read file
+      const text = await file.text();
+      const metaData = JSON.parse(text);
+
+      // 2. Import with validation
+      const result = importNodeLibrary(
+        metaData,
+        { taskType, annotatorId },
+        nodes
+      );
+
+      // 3. Import nodes (skip conflicts in MVP)
+      if (result.importCount > 0) {
+        useAnnotationStore.getState().importMetaNodes(result.nodesToImport);
+      }
+
+      // 4. Show result
+      let message = `成功导入 ${result.importCount} 个节点！`;
+
+      if (result.skipCount > 0) {
+        message += `\n\n跳过 ${result.skipCount} 个冲突节点：\n`;
+        message += result.conflicts.map(c =>
+          `• ${c.nodeId}: "${c.existing}"`
+        ).join('\n');
+      }
+
+      message += '\n\n💡 提示：导入的节点可在标注时通过"复用现有节点"使用。';
+
+      alert(message);
+
+    } catch (error) {
+      console.error('Meta import failed:', error);
+      alert('导入失败：' + error.message);
+    }
+
+    e.target.value = '';
+  }, [taskType, annotatorId, nodes]);
+
   // === Add Video Handler ===
   const handleAddVideo = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
 
   const handleFileChange = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    // Validate file
-    if (!file.type.startsWith('video/')) {
+    // Validate files
+    const videoFiles = files.filter(f => f.type.startsWith('video/'));
+    if (videoFiles.length === 0) {
       alert('请选择视频文件');
       return;
     }
 
     const maxSize = 2 * 1024 * 1024 * 1024; // 2GB
-    if (file.size > maxSize) {
-      alert('视频文件过大，请小于 2GB');
+    const oversizedFiles = videoFiles.filter(f => f.size > maxSize);
+    if (oversizedFiles.length > 0) {
+      alert(`以下文件过大（>2GB），将被跳过：\n${oversizedFiles.map(f => f.name).join('\n')}`);
+    }
+
+    const validFiles = videoFiles.filter(f => f.size <= maxSize);
+    if (validFiles.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
     setIsUploading(true);
-    setUploadProgress(0);
+    setUploadStats({ current: 0, total: validFiles.length });
+
+    let lastUploadedVideoId = null;
+    const failedFiles = [];
 
     try {
-      // Generate unique video ID - 使用时间戳+随机数确保唯一
-      const timestamp = Date.now();
-      const randomSuffix = Math.random().toString(36).substr(2, 9);
-      const videoId = `v${timestamp}_${randomSuffix}`;
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        setUploadingFileName(file.name);
+        setUploadStats({ current: i + 1, total: validFiles.length });
+        setUploadProgress(0);
 
-      // 1. Save video file to OPFS
-      setUploadProgress(10);
-      await saveVideoFile(file, videoId, (loaded, total) => {
-        const percent = 10 + Math.round((loaded / total) * 60);
-        setUploadProgress(percent);
-      });
+        try {
+          // Generate unique video ID - 使用时间戳+随机数确保唯一
+          const timestamp = Date.now();
+          const randomSuffix = Math.random().toString(36).substr(2, 9);
+          const videoId = `v${timestamp}_${randomSuffix}`;
 
-      // 2. Extract metadata
-      setUploadProgress(70);
-      const metadata = await extractVideoMetadata(file);
-      const fps = 30;
-      const totalFrames = Math.floor(metadata.duration * fps);
+          // 1. Save video file to OPFS
+          setUploadProgress(10);
+          await saveVideoFile(file, videoId, (loaded, total) => {
+            const percent = 10 + Math.round((loaded / total) * 60);
+            setUploadProgress(percent);
+          });
 
-      // 3. Save to IndexedDB
-      setUploadProgress(80);
-      await saveVideo({
-        id: videoId,
-        projectId,
-        name: file.name,
-        fps,
-        totalFrames,
-        duration: metadata.duration,
-        width: metadata.width,
-        height: metadata.height,
-        createdAt: new Date().toISOString(),
-      });
+          // 2. Extract metadata
+          setUploadProgress(70);
+          const metadata = await extractVideoMetadata(file);
+          const fps = 30;
+          const totalFrames = Math.floor(metadata.duration * fps);
 
-      // 4. Add to video store and switch
-      setUploadProgress(90);
-      const videoUrl = URL.createObjectURL(file);
-      addVideo({
-        id: videoId,
-        projectId,
-        name: file.name,
-        url: videoUrl,
-        fps,
-        totalFrames,
-        duration: metadata.duration,
-      });
+          // 3. Save to IndexedDB
+          setUploadProgress(80);
+          await saveVideo({
+            id: videoId,
+            projectId,
+            name: file.name,
+            fps,
+            totalFrames,
+            duration: metadata.duration,
+            width: metadata.width,
+            height: metadata.height,
+            createdAt: new Date().toISOString(),
+          });
 
-      setCurrentVideo(videoId);
-      setUploadProgress(100);
+          // 4. Add to video store
+          setUploadProgress(90);
+          const videoUrl = URL.createObjectURL(file);
+          addVideo({
+            id: videoId,
+            projectId,
+            name: file.name,
+            url: videoUrl,
+            fps,
+            totalFrames,
+            duration: metadata.duration,
+          });
 
-      console.log('视频上传成功:', file.name);
+          lastUploadedVideoId = videoId;
+          setUploadProgress(100);
+
+          console.log(`视频上传成功 (${i + 1}/${validFiles.length}):`, file.name);
+        } catch (error) {
+          console.error(`视频上传失败 (${i + 1}/${validFiles.length}):`, file.name, error);
+          failedFiles.push({ name: file.name, error: error.message });
+        }
+      }
+
+      // Switch to last uploaded video
+      if (lastUploadedVideoId) {
+        setCurrentVideo(lastUploadedVideoId);
+      }
+
+      // Show summary
+      if (failedFiles.length > 0) {
+        alert(`批量上传完成！\n\n成功: ${validFiles.length - failedFiles.length} 个\n失败: ${failedFiles.length} 个\n\n失败文件:\n${failedFiles.map(f => `• ${f.name}: ${f.error}`).join('\n')}`);
+      } else {
+        alert(`批量上传完成！成功上传 ${validFiles.length} 个视频。`);
+      }
     } catch (error) {
-      console.error('视频上传失败:', error);
-      alert('视频上传失败: ' + error.message);
+      console.error('批量上传出错:', error);
+      alert('批量上传出错: ' + error.message);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
+      setUploadingFileName('');
+      setUploadStats({ current: 0, total: 0 });
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -524,7 +614,16 @@ function AnnotationPage({ projectId, onBack }) {
         ref={fileInputRef}
         type="file"
         accept="video/*"
+        multiple
         onChange={handleFileChange}
+        style={{ display: 'none' }}
+      />
+
+      <input
+        ref={metaFileInputRef}
+        type="file"
+        accept=".json,application/json"
+        onChange={handleMetaFileChange}
         style={{ display: 'none' }}
       />
 
@@ -539,6 +638,7 @@ function AnnotationPage({ projectId, onBack }) {
         onExportGraph={handleExportGraph}
         onExportProject={handleExportProject}
         onExportGraphMeta={handleExportGraphMeta}
+        onImportMeta={handleImportMeta}
         videos={videos}
         currentVideoId={currentVideoId}
         onVideoChange={handleSelectVideo}
@@ -624,6 +724,24 @@ function AnnotationPage({ projectId, onBack }) {
             <div style={{ fontSize: 14, color: '#333', fontWeight: 500 }}>
               上传视频中...
             </div>
+            {uploadStats.total > 1 && (
+              <div style={{ fontSize: 13, color: '#666', marginTop: -8 }}>
+                第 {uploadStats.current} / {uploadStats.total} 个
+              </div>
+            )}
+            {uploadingFileName && (
+              <div style={{
+                fontSize: 12,
+                color: '#888',
+                maxWidth: 400,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                textAlign: 'center'
+              }}>
+                {uploadingFileName}
+              </div>
+            )}
             <div style={{
               width: 300,
               height: 8,

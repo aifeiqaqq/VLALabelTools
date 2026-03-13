@@ -17,6 +17,7 @@ const TopBar = React.memo(function TopBar({
   onExportGraph,
   onExportProject,
   onExportGraphMeta,
+  onImportMeta,
   videos = [],
   currentVideoId,
   onVideoChange,
@@ -127,8 +128,16 @@ const TopBar = React.memo(function TopBar({
               overflow: 'auto',
               zIndex: 1000,
             }}>
-              <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 11, color: '#888', fontWeight: 500 }}>项目中的视频</span>
+                {(() => {
+                  const missingCount = videos.filter(v => v.fileMissing).length;
+                  return missingCount > 0 ? (
+                    <span style={{ fontSize: 10, color: '#dc2626', fontWeight: 500 }}>
+                      {missingCount} 个需要上传
+                    </span>
+                  ) : null;
+                })()}
               </div>
               {videos.map((v, i) => (
                 <div
@@ -147,9 +156,21 @@ const TopBar = React.memo(function TopBar({
                   }}
                 >
                   <span style={{ fontSize: 11, color: '#888', width: 50 }}>视频 {i + 1}</span>
+                  {v.fileMissing && (
+                    <span
+                      style={{
+                        fontSize: 14,
+                        marginRight: 4,
+                        filter: 'grayscale(0.3)',
+                      }}
+                      title="需要上传视频文件"
+                    >
+                      ⚠️
+                    </span>
+                  )}
                   <span style={{
                     fontSize: 12,
-                    color: v.id === currentVideoId ? '#f59e0b' : '#333',
+                    color: v.id === currentVideoId ? '#f59e0b' : (v.fileMissing ? '#dc2626' : '#333'),
                     flex: 1,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -268,6 +289,21 @@ const TopBar = React.memo(function TopBar({
           title="导出简化的节点关系图"
         >
           🌐 Graph Meta
+        </button>
+      )}
+
+      {onImportMeta && (
+        <button
+          onClick={onImportMeta}
+          style={{
+            ...S.btn(false),
+            color: '#3b82f6',
+            borderColor: '#3b82f633',
+          }}
+          aria-label="导入节点库"
+          title="从Meta JSON导入节点定义"
+        >
+          📚 导入节点库
         </button>
       )}
 

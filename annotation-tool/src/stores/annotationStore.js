@@ -140,13 +140,26 @@ export const useAnnotationStore = create((set, get) => ({
   updateNode: (nodeId, updates) => set((state) => {
     const node = state.nodes[nodeId];
     if (!node) return state;
-    
+
+    // 如果更新包含actions，同步更新所有video_segments中的actions
+    let updatedVideoSegments = node.video_segments;
+    if (updates.actions !== undefined && node.video_segments) {
+      updatedVideoSegments = { ...node.video_segments };
+      Object.keys(updatedVideoSegments).forEach(videoId => {
+        updatedVideoSegments[videoId] = {
+          ...updatedVideoSegments[videoId],
+          actions: updates.actions
+        };
+      });
+    }
+
     return {
       nodes: {
         ...state.nodes,
         [nodeId]: {
           ...node,
           ...updates,
+          video_segments: updatedVideoSegments,
           updated_at: new Date().toISOString()
         }
       }
@@ -298,6 +311,16 @@ export const useAnnotationStore = create((set, get) => ({
 
     return newEntry.id;
   },
+
+  // ===== Actions - Meta Import =====
+
+  /**
+   * Import nodes from meta JSON (bulk operation)
+   * Merges imported nodes with existing nodes
+   */
+  importMetaNodes: (nodesToImport) => set((state) => ({
+    nodes: { ...state.nodes, ...nodesToImport }
+  })),
 
   // ===== Actions - Reset =====
 
