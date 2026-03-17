@@ -16,10 +16,10 @@ const elk = new ELK();
 // 默认布局选项
 const defaultLayoutOptions = {
   'elk.algorithm': 'layered',
-  'elk.direction': 'RIGHT',           // 从左到右布局
-  'elk.spacing.nodeNode': '60',       // 节点间距
-  'elk.spacing.componentComponent': '60',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '100',  // 层间距
+  'elk.direction': 'DOWN',            // 从上到下布局（改为纵向）
+  'elk.spacing.nodeNode': '50',       // 节点间距（减小）
+  'elk.spacing.componentComponent': '50',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '80',  // 层间距（减小）
   'elk.edgeRouting': 'ORTHOGONAL',    // 正交边路由（直角转弯）
   'elk.layered.edgeRouting.splines.mode': 'ORTHOGONAL',
   'elk.layered.nodePlacement.strategy': 'SIMPLE',
@@ -41,7 +41,7 @@ function wrapText(text, maxWidth, fontSize = 11) {
   if (!text) return [''];
 
   // 估算：等宽字体 DM Mono，每个字符约占 fontSize * 0.6 像素
-  const charWidth = fontSize * 0.6;
+  const charWidth = fontSize * 2;
   const maxCharsPerLine = Math.floor(maxWidth / charWidth);
 
   if (text.length <= maxCharsPerLine) {
@@ -108,8 +108,8 @@ function buildGraphFromNodes(nodes, marks) {
   // 构建图节点（每个唯一节点一个）
   const graphNodes = sortedNodes.map(node => ({
     id: node.node_id,
-    width: 280,
-    height: 100,
+    width: 320,   // 增加宽度：280 → 320px，容纳更多文字
+    height: 140,  // 增加高度：100 → 140px，支持更多行
     data: {
       node_id: node.node_id,
       state_description: node.state_description,
@@ -119,27 +119,60 @@ function buildGraphFromNodes(nodes, marks) {
     },
   }));
 
-  // 构建边（基于各视频的 parent_node 关系）
+  // 构建边（基于各视频的 parent_node 关系，或 node_meta.suggested_parents）
   const edges = [];
   const edgeSet = new Set();
-  
+
   // 遍历所有节点，收集所有视频中的 parent_node 关系
   sortedNodes.forEach(node => {
     const segments = node.video_segments || {};
-    Object.entries(segments).forEach(([videoId, segment]) => {
-      if (segment.parent_node) {
-        const edgeId = `${segment.parent_node}->${node.node_id}`;
-        if (!edgeSet.has(edgeId)) {
-          edgeSet.add(edgeId);
-          edges.push({
-            id: edgeId,
-            sources: [segment.parent_node],
-            targets: [node.node_id],
-            actions: segment.actions || node.actions || [],
+    const hasSegments = Object.keys(segments).length > 0;
+
+    if (hasSegments) {
+      // 如果有视频段落，从 video_segments 读取父节点
+      Object.entries(segments).forEach(([videoId, segment]) => {
+        if (segment.parent_node) {
+          // 处理父节点数组和旧的字符串格式
+          const parentNodes = Array.isArray(segment.parent_node)
+            ? segment.parent_node
+            : [segment.parent_node];
+
+          // 为每个父节点创建一条边
+          parentNodes.forEach(parentId => {
+            const edgeId = `${parentId}->${node.node_id}`;
+            if (!edgeSet.has(edgeId)) {
+              edgeSet.add(edgeId);
+              edges.push({
+                id: edgeId,
+                sources: [parentId],
+                targets: [node.node_id],
+                actions: segment.actions || node.actions || [],
+              });
+            }
           });
         }
-      }
-    });
+      });
+    } else if (node.node_meta?.suggested_parents && node.node_meta.suggested_parents.length > 0) {
+      // 如果没有视频段落，从 node_meta.suggested_parents 读取（导入的 meta 节点）
+      const suggestedParents = Array.isArray(node.node_meta.suggested_parents)
+        ? node.node_meta.suggested_parents
+        : [node.node_meta.suggested_parents];
+
+      suggestedParents.forEach(parentId => {
+        if (parentId) {  // 确保 parentId 不是空值
+          const edgeId = `${parentId}->${node.node_id}`;
+          if (!edgeSet.has(edgeId)) {
+            edgeSet.add(edgeId);
+            edges.push({
+              id: edgeId,
+              sources: [parentId],
+              targets: [node.node_id],
+              actions: node.actions || [],
+            });
+          }
+        }
+      });
+    }
   });
 
   // 如果没有 parent_node 定义的边，使用节点ID顺序边作为回退
@@ -204,7 +237,7 @@ const GraphTab = React.memo(function GraphTab({
     setLoading(true);
 
     const graph = buildGraphFromNodes(nodes, marks);
-    
+
     elk.layout(graph, {
       layoutOptions: defaultLayoutOptions,
     }).then(result => {
@@ -387,12 +420,12 @@ const GraphTab = React.memo(function GraphTab({
                   {/* 节点ID */}
                   <text
                     x={x + W / 2}
-                    y={y + 18}
+                    y={y + 20}
                     textAnchor="middle"
-                    fontSize={13}
+                    fontSize={16}
                     fill="#16a34a"
                     fontFamily="DM Mono"
-                    fontWeight="500"
+                    fontWeight="600"
                   >
                     {nodeData.node_id}
                   </text>
@@ -401,17 +434,18 @@ const GraphTab = React.memo(function GraphTab({
                   {nodeData.actions && nodeData.actions.length > 0 && (
                     (() => {
                       const actionText = nodeData.actions.map(a => `${a.target}·${a.action_name}`).join(', ');
+                      const maxActionLength = 40;  // 增加动作文本长度：30 → 40
                       return (
                         <text
                           x={x + W / 2}
-                          y={y + 34}
+                          y={y + 38}
                           textAnchor="middle"
-                          fontSize={9}
+                          fontSize={11}
                           fill="#f59e0b"
                           fontFamily="DM Mono"
                           fontWeight="500"
                         >
-                          ⚡ {actionText.length > 30 ? actionText.slice(0, 30) + '...' : actionText}
+                          ⚡ {actionText.length > maxActionLength ? actionText.slice(0, maxActionLength) + '...' : actionText}
                         </text>
                       );
                     })()
@@ -420,18 +454,20 @@ const GraphTab = React.memo(function GraphTab({
                   {/* 状态描述 - 自动换行 */}
                   {(() => {
                     // 将文字分割成多行（留出左右padding 20px）
-                    const lines = wrapText(nodeData.state_description, W - 40, 10);
-                    const lineHeight = 12;
-                    const startY = y + 50;
+                    const descFontSize = 12;
+                    const lines = wrapText(nodeData.state_description, W - 40, descFontSize);
+                    const lineHeight = 15;
+                    const startY = y + 56;
+                    const maxLines = 6;  // 增加显示行数：3 → 6
 
                     return (
                       <text
                         textAnchor="middle"
-                        fontSize={10}
+                        fontSize={descFontSize}
                         fill="#555"
                         fontFamily="DM Mono"
                       >
-                        {lines.slice(0, 3).map((line, idx) => (
+                        {lines.slice(0, maxLines).map((line, idx) => (
                           <tspan
                             key={idx}
                             x={x + W / 2}
@@ -441,11 +477,12 @@ const GraphTab = React.memo(function GraphTab({
                             {line}
                           </tspan>
                         ))}
-                        {lines.length > 3 && (
+                        {lines.length > maxLines && (
                           <tspan
                             x={x + W / 2}
                             dy={lineHeight}
                             fill="#999"
+                            fontSize={11}
                           >
                             ...
                           </tspan>
@@ -459,7 +496,7 @@ const GraphTab = React.memo(function GraphTab({
                     x={x + W / 2}
                     y={y + H - 10}
                     textAnchor="middle"
-                    fontSize={9}
+                    fontSize={11}
                     fill="#888"
                     fontFamily="DM Mono"
                   >

@@ -485,37 +485,23 @@ const EditModal = React.memo(function EditModal({
             )}
           </div>
 
-          {/* 父节点选择 */}
+          {/* 父节点选择 - 支持多选 */}
           <div style={{ marginBottom: 16 }}>
             <label style={S.label}>
-              父段落（逻辑来源）
-              {parentNodeId && (
+              父段落（逻辑来源）<span style={{color: '#999', fontWeight: 400}}>(可选，可多选)</span>
+              {parentNodeId && Array.isArray(parentNodeId) && parentNodeId.length > 0 && (
                 <span style={{ color: '#f59e0b', marginLeft: 8, fontSize: 11 }}>
-                  {parentNodeId} → {editMark.node_id}
+                  已选 {parentNodeId.length} 个
                 </span>
               )}
             </label>
 
-            {/* 根节点选项 */}
-            <div style={{ marginBottom: 10 }}>
-              <button
-                onClick={() => onParentNodeChange(null)}
-                style={{
-                  ...S.btn(!parentNodeId),
-                  width: '100%',
-                  padding: '8px',
-                  textAlign: 'left',
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>无父段落（起始段落）</span>
-                <span style={{ color: '#666', marginLeft: 8, fontSize: 11 }}>
-                  这是任务的起始状态
-                </span>
-              </button>
+            <div style={{ fontSize: 10, color: '#888', marginBottom: 6 }}>
+              勾选一个或多个父节点，表示该段落由这些状态转换而来
             </div>
 
             {/* 可选父段落列表 */}
-            {availableParentNodes.length > 0 && (
+            {availableParentNodes.length > 0 ? (
               <div
                 style={{
                   maxHeight: 150,
@@ -526,36 +512,65 @@ const EditModal = React.memo(function EditModal({
                 }}
               >
                 {availableParentNodes.map((node) => {
-                  const isSelected = parentNodeId === node.node_id;
+                  const selectedParents = Array.isArray(parentNodeId) ? parentNodeId : (parentNodeId ? [parentNodeId] : []);
+                  const isSelected = selectedParents.includes(node.node_id);
+
                   return (
-                    <div
+                    <label
                       key={node.node_id}
-                      onClick={() => onParentNodeChange(node.node_id)}
                       style={{
                         padding: '10px 12px',
                         borderRadius: 6,
                         cursor: 'pointer',
                         border: `2px solid ${isSelected ? '#f59e0b' : '#e5e5e5'}`,
                         background: isSelected ? '#f59e0b0d' : '#f9f7f4',
+                        display: 'block',
                       }}
                     >
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                        <span style={S.pill('#f59e0b')}>{node.node_id}</span>
-                        <span style={{ fontSize: 10, color: '#888' }}>
-                          帧 {node.from_frame}→{node.to_frame}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 11, color: '#666' }}>
-                        {node.state_description}
-                      </div>
-                      {node.actions && node.actions.length > 0 && (
-                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
-                          ⚡ {node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            const newParents = isSelected
+                              ? selectedParents.filter(id => id !== node.node_id)
+                              : [...selectedParents, node.node_id];
+                            onParentNodeChange(newParents);
+                          }}
+                          style={{ marginTop: 2, cursor: 'pointer' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                            <span style={S.pill('#f59e0b')}>{node.node_id}</span>
+                            <span style={{ fontSize: 10, color: '#888' }}>
+                              帧 {node.from_frame}→{node.to_frame}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#666' }}>
+                            {node.state_description}
+                          </div>
+                          {node.actions && node.actions.length > 0 && (
+                            <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
+                              ⚡ {node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    </label>
                   );
                 })}
+              </div>
+            ) : (
+              <div style={{
+                padding: '12px',
+                background: '#f9f9f9',
+                border: '1px dashed #ddd',
+                borderRadius: 6,
+                textAlign: 'center',
+                color: '#999',
+                fontSize: 11
+              }}>
+                暂无可选的父段落
               </div>
             )}
           </div>

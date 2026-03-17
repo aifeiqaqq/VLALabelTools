@@ -4,6 +4,7 @@ import { create } from 'zustand';
  * UI Store
  * Manages UI state (tabs, modals, search inputs)
  * 支持多视频和父节点选择
+ * v2.2: 添加预选择路由状态，支持快速标注模式
  */
 export const useUIStore = create((set) => ({
   // State
@@ -12,8 +13,9 @@ export const useUIStore = create((set) => ({
   // Mark modal state
   showMark: false,
   pendingCap: null,
-  mMode: "new",
+  mMode: "new", // "new" | "existing" | "route"
   selNode: null,
+  selectedRouteId: null,    // 当前选中的路线ID
   stateDesc: "",
   metaVals: {},
   // Structured action fields (v3.0)
@@ -21,12 +23,16 @@ export const useUIStore = create((set) => ({
   actionName: "",           // 动作名称（如：open, close）
   customActionName: "",     // 自定义动作名称
 
+  // Quick mark mode state (v2.2)
+  showQuickMark: false,     // 快速标注模态框显示状态
+  preselectedRouteId: null, // 预选择的路由ID（用于快速模式）
+
   // Edit modal state
   showEdit: false,
   editMark: null,
   editDesc: "",
   editMeta: {},
-  editParentNodeId: null,
+  editParentNodeId: [],  // 数组格式支持多父节点
 
   // Library tab search
   libTabSearch: "",
@@ -43,6 +49,7 @@ export const useUIStore = create((set) => ({
     pendingCap,
     mMode: "new",
     selNode: null,
+    selectedRouteId: null,
     stateDesc: "",
     metaVals: {},
     actionTarget: "",
@@ -59,6 +66,8 @@ export const useUIStore = create((set) => ({
 
   setSelectedNode: (nodeId) => set({ selNode: nodeId }),
 
+  setSelectedRouteId: (routeId) => set({ selectedRouteId: routeId }),
+
   setStateDesc: (desc) => set({ stateDesc: desc }),
 
   setMetaVals: (vals) => set({ metaVals: vals }),
@@ -71,7 +80,7 @@ export const useUIStore = create((set) => ({
   setCustomActionName: (name) => set({ customActionName: name }),
 
   // Actions - Edit Modal
-  openEditModal: (editMark, editDesc, editMeta, editParentNodeId = null) => set({
+  openEditModal: (editMark, editDesc, editMeta, editParentNodeId = []) => set({
     showEdit: true,
     editMark,
     editDesc,
@@ -84,7 +93,7 @@ export const useUIStore = create((set) => ({
     editMark: null,
     editDesc: "",
     editMeta: {},
-    editParentNodeId: null,
+    editParentNodeId: [],
   }),
 
   setEditDesc: (desc) => set({ editDesc: desc }),
@@ -98,4 +107,21 @@ export const useUIStore = create((set) => ({
 
   // Actions - Frame Input
   setFrameInput: (input) => set({ frameInput: input }),
+
+  // Actions - Quick Mark Mode (v2.2)
+  openQuickMarkModal: (pendingCap) => set({
+    showQuickMark: true,
+    pendingCap,
+  }),
+
+  closeQuickMarkModal: () => set({
+    showQuickMark: false,
+    pendingCap: null,
+  }),
+
+  setPreselectedRouteId: (routeId) => set({ preselectedRouteId: routeId }),
+
+  clearPreselectedRoute: () => set({
+    preselectedRouteId: null,
+  }),
 }));

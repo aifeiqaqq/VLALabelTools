@@ -1,6 +1,25 @@
 import { create } from 'zustand';
 
 /**
+ * Normalize parent_node field to array format
+ * Ensures backward compatibility with old single-parent format
+ *
+ * @param {null|string|string[]} parentNode - Parent node(s)
+ * @returns {string[]} Normalized array of parent node IDs
+ *
+ * @example
+ * normalizeParentNode(null) => []
+ * normalizeParentNode("001") => ["001"]
+ * normalizeParentNode(["001", "002"]) => ["001", "002"]
+ */
+export function normalizeParentNode(parentNode) {
+  if (!parentNode) return [];
+  if (Array.isArray(parentNode)) return parentNode;
+  if (typeof parentNode === 'string') return [parentNode];
+  return [];
+}
+
+/**
  * Annotation Store - Unified Node Model (v4.0)
  * 统一节点模型：一个 node_id 对应多个视频的时间范围
  * nodes: {
@@ -10,8 +29,8 @@ import { create } from 'zustand';
  *     actions: [{ target: 'drawer', action_name: 'open' }],
  *     node_meta: { drawer_state: 'open' },
  *     video_segments: {
- *       video_1: { from_frame: 0, to_frame: 100, from_timestamp: 0, to_timestamp: 3.33, parent_node: null },
- *       video_2: { from_frame: 0, to_frame: 120, from_timestamp: 0, to_timestamp: 4.0, parent_node: null }
+ *       video_1: { from_frame: 0, to_frame: 100, from_timestamp: 0, to_timestamp: 3.33, parent_node: [] },
+ *       video_2: { from_frame: 0, to_frame: 120, from_timestamp: 0, to_timestamp: 4.0, parent_node: [] }
  *     },
  *     task_type: 'drawer',
  *     annotator_id: 'user_01',
@@ -30,6 +49,15 @@ export const useAnnotationStore = create((set, get) => ({
 
   // 动作库
   actionLib: { drawer: [], coffee_machine: [] },
+
+  // 路线存储
+  routes: {},
+
+  // 当前激活的路线（用于路线标注模式）
+  activeRoute: null,
+
+  // 路线标注进度
+  routeProgress: null, // { routeId, currentIndex, totalNodes }
 
   // ===== Getters =====
 
@@ -71,6 +99,18 @@ export const useAnnotationStore = create((set, get) => ({
   getMarksByVideo: (videoId) => {
     const { marks } = get();
     return marks[videoId] || [];
+  },
+
+  // 获取所有路线列表
+  getAllRoutes: () => {
+    const { routes } = get();
+    return Object.values(routes).sort((a, b) => a.route_id.localeCompare(b.route_id));
+  },
+
+  // 根据route_id查找路线
+  getRouteById: (routeId) => {
+    const { routes } = get();
+    return routes[routeId] || null;
   },
 
   // ===== Actions - Nodes =====
@@ -312,6 +352,72 @@ export const useAnnotationStore = create((set, get) => ({
     return newEntry.id;
   },
 
+  // ===== Actions - Routes =====
+
+  /**
+   * Add a route to the store
+   */
+  addRoute: (route) => set((state) => ({
+    routes: {
+      ...state.routes,
+      [route.route_id]: route
+    }
+  })),
+
+  /**
+   * Delete a route from the store
+   */
+  deleteRoute: (routeId) => set((state) => {
+    const { [routeId]: _, ...remainingRoutes } = state.routes;
+    return { routes: remainingRoutes };
+  }),
+
+  /**
+   * Set active route and initialize progress
+   */
+  setActiveRoute: (routeId) => {
+    const route = get().getRouteById(routeId);
+    if (!route) return;
+
+    set({
+      activeRoute: route,
+      routeProgress: {
+        routeId: routeId,
+        currentIndex: 0,
+        totalNodes: route.node_sequence.length
+      }
+    });
+  },
+
+  /**
+   * Advance to next node in route
+   */
+  advanceRouteProgress: () => set((state) => {
+    if (!state.routeProgress || !state.activeRoute) return state;
+
+    const newIndex = state.routeProgress.currentIndex + 1;
+
+    // Check if we've reached the end
+    if (newIndex >= state.activeRoute.node_sequence.length) {
+      return state; // Don't advance past the end
+    }
+
+    return {
+      routeProgress: {
+        ...state.routeProgress,
+        currentIndex: newIndex
+      }
+    };
+  }),
+
+  /**
+   * Reset route progress and clear active route
+   */
+  resetRouteProgress: () => set({
+    activeRoute: null,
+    routeProgress: null
+  }),
+
   // ===== Actions - Meta Import =====
 
   /**
@@ -322,11 +428,22 @@ export const useAnnotationStore = create((set, get) => ({
     nodes: { ...state.nodes, ...nodesToImport }
   })),
 
+  /**
+   * Import routes from meta JSON (bulk operation)
+   * Merges imported routes with existing routes
+   */
+  importMetaRoutes: (routesToImport) => set((state) => ({
+    routes: { ...state.routes, ...routesToImport }
+  })),
+
   // ===== Actions - Reset =====
 
   resetAnnotations: () => set({
     nodes: {},
     marks: {},
-    actionLib: { drawer: [], coffee_machine: [] }
+    actionLib: { drawer: [], coffee_machine: [] },
+    routes: {},
+    activeRoute: null,
+    routeProgress: null
   })
 }));

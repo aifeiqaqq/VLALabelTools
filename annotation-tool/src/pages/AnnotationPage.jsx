@@ -9,7 +9,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useVideoPlayer } from "../hooks/useVideoPlayer";
 import { usePersistence } from "../hooks/usePersistence";
 import { exportJson, exportProjectJson, exportProjectGraphMeta } from "../utils/exportUtils";
-import { importNodeLibrary } from "../utils/metaImport";
+import { importNodeLibrary, importRoutes } from "../utils/metaImport";
 import { saveVideo, deleteVideo } from "../utils/db";
 import { saveVideoFile, extractVideoMetadata, getVideoFile, deleteVideoFile } from "../utils/localFs";
 import TopBar from "../components/layout/TopBar";
@@ -315,15 +315,18 @@ function AnnotationPage({ projectId, onBack }) {
     try {
       await exportProjectGraphMeta({
         projectId,
+        annotatorId,
+        taskType,
         sceneId,
         nodes,
+        videos,
       });
       console.log('Graph Meta 导出成功');
     } catch (error) {
       console.error('导出 Graph Meta 失败:', error);
       alert('导出 Graph Meta 失败: ' + error.message);
     }
-  }, [projectId, sceneId, nodes]);
+  }, [projectId, annotatorId, taskType, sceneId, nodes, videos]);
 
   // === Import Meta JSON Handler ===
   const handleImportMeta = useCallback(async () => {
@@ -351,8 +354,21 @@ function AnnotationPage({ projectId, onBack }) {
         useAnnotationStore.getState().importMetaNodes(result.nodesToImport);
       }
 
-      // 4. Show result
+      // 4. Import routes
+      // 注意：这里使用 result.nodesToImport（即将导入的节点）来验证路由
+      // 因为节点已经通过 importMetaNodes 保存到 store，但 nodes 变量还未更新
+      const nodesAfterImport = { ...nodes, ...result.nodesToImport };
+      const routeResult = importRoutes(metaData, nodesAfterImport);
+      if (routeResult.importCount > 0) {
+        useAnnotationStore.getState().importMetaRoutes(routeResult.routesToImport);
+      }
+
+      // 5. Show result
       let message = `成功导入 ${result.importCount} 个节点！`;
+
+      if (routeResult.importCount > 0) {
+        message += `\n成功导入 ${routeResult.importCount} 个路线！`;
+      }
 
       if (result.skipCount > 0) {
         message += `\n\n跳过 ${result.skipCount} 个冲突节点：\n`;
@@ -361,7 +377,14 @@ function AnnotationPage({ projectId, onBack }) {
         ).join('\n');
       }
 
-      message += '\n\n💡 提示：导入的节点可在标注时通过"复用现有节点"使用。';
+      if (routeResult.warnings.length > 0) {
+        message += `\n\n⚠️ 路线警告：\n`;
+        message += routeResult.warnings.map(w =>
+          `• ${w.routeName}: ${w.message}`
+        ).join('\n');
+      }
+
+      message += '\n\n💡 提示：导入的节点可在标注时通过"复用现有节点"使用，路线可通过"复用路由"使用。';
 
       alert(message);
 

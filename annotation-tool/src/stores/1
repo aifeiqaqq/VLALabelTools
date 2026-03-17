@@ -1,0 +1,12 @@
+C1:drawer is closed
+C2:hand is opening the drawer 
+C3:drawer is half open
+C4:drawer is totally opened
+C5:hand is picking the cup
+C6:cup in hand
+C7:cup not in hand
+C8:hand is placing cup to drawer
+C9:cup is in drawer
+C10:hand is closing the drawer 
+C11:drawer is half closed and cup is in drawer
+C12:task “put cup in drawer” is completed.

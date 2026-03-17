@@ -1,7 +1,7 @@
 # AnnotationTool 开发文档
 
-**版本**: v2.1.0
-**更新**: 2026-03-11
+**版本**: v2.2.0
+**更新**: 2026-03-17
 **状态**: ✅ 生产就绪
 
 VLA Task Graph 标注工具 - 为机器人视觉-语言-动作任务提供结构化视频标注
@@ -41,6 +41,16 @@ annotation-tool/src/
 │   ├── panels/                   # 统计、节点、边列表
 │   ├── tabs/                     # 标注、图可视化、动作库
 │   └── annotation/               # 标注模态框
+│       ├── MarkModal.jsx         # 主标注对话框
+│       ├── EditModal.jsx         # 编辑节点对话框
+│       ├── RoutePreselector.jsx  # 路由预选择器 (v2.2)
+│       ├── QuickMarkModal.jsx    # 快速标注模态框 (v2.2)
+│       ├── RouteSelector.jsx     # 路由选择器
+│       ├── RouteProgressIndicator.jsx  # 路由进度指示器
+│       ├── NodeSelector.jsx      # 节点选择器
+│       ├── NodeModeSelector.jsx  # 节点模式选择器
+│       ├── MetaForm.jsx          # 元数据表单
+│       └── ActionInput.jsx       # 动作输入组件
 │
 ├── hooks/                        # 自定义Hooks
 │   ├── useVideoPlayer.js         # 视频生命周期管理
@@ -69,7 +79,7 @@ annotation-tool/src/
     └── styles.js                 # 暖白色主题样式
 ```
 
-**代码统计**: 43个文件 | ~5000行代码 | 平均~115行/文件
+**代码统计**: 45个文件 | ~5500行代码 | 平均~122行/文件
 
 ---
 
@@ -154,6 +164,71 @@ marks: { 'v1': [...], 'v2': [...] }  // 按视频分组
 - Graph标签页 → "📊 导出 Graph"按钮
 - 矢量格式，无损缩放
 - 适合论文插图、报告文档
+
+### 7. 快速路由复用标注 🆕 v2.2
+
+**问题**: 传统路由复用需要每次在标注对话框中选择模式 + 选择路由，操作路径长，打断工作流
+
+**解决方案**: 预选择路由 + 快速确认模式
+
+#### 工作流程
+
+```
+传统流程:              优化流程:
+按 M                    选择路由 → 进入快速模式
+↓                       ↓
+选择"复用路由"模式       按 M → 打开简化对话框
+↓                       ↓
+选择路由                按 Enter → 确认标注
+↓                       ↓
+选择节点                自动推进到下一个节点
+↓
+点击确认
+```
+
+#### 新组件
+
+**RoutePreselector** (`components/annotation/RoutePreselector.jsx`)
+- 在 AnnotateTab 主界面显示可用路由列表
+- 支持选择路由进入快速标注模式
+- 实时显示当前进度：进度条、节点序列、当前节点信息
+
+**QuickMarkModal** (`components/annotation/QuickMarkModal.jsx`)
+- 简化版标注对话框（宽度480px）
+- 只显示：帧预览、进度指示、节点信息、操作提示
+- 支持快捷键：Enter确认、Esc取消
+- 自动填充：状态描述、动作列表、节点元数据、父节点关系
+
+#### 使用方式
+
+1. 在标注界面顶部的 RoutePreselector 中选择要复用的路由
+2. 界面显示激活状态（紫色主题）：进度条、当前节点、动作预览
+3. 按 `M` 键打开 QuickMarkModal
+4. 按 `Enter` 键确认当前帧标注
+5. 系统自动推进到下一个节点，重复步骤 3-4
+6. 路由完成后自动退出快速模式
+
+#### 键盘快捷键
+
+| 快捷键 | 功能 |
+|--------|------|
+| `M` | 打开快速标注对话框 |
+| `Enter` | 确认标注 |
+| `Esc` | 取消当前标注 |
+
+#### 状态管理 (uiStore)
+
+```javascript
+// 新增状态
+showQuickMark: false,         // 快速标注模态框显示
+preselectedRouteId: null,     // 预选择的路由ID
+
+// 新增 Actions
+openQuickMarkModal(pendingCap)
+closeQuickMarkModal()
+setPreselectedRouteId(routeId)
+clearPreselectedRoute()
+```
 
 ---
 
@@ -278,6 +353,13 @@ console.log(useAnnotationStore.getState())
 
 ## 版本历史
 
+### v2.2.0 (2026-03-17)
+- ✨ **快速路由复用**: 预选择路由 + 一键确认标注，大幅提升标注效率
+- ✨ **RoutePreselector 组件**: 在主界面预选择路由，实时显示进度
+- ✨ **QuickMarkModal 组件**: 简化版标注对话框，Enter确认/Esc取消
+- ⚡ **优化工作流**: 路由标注操作步骤从 5 步减少到 2 步
+- ♻️ **代码重构**: 提取路由相关逻辑，增强可维护性
+
 ### v2.1.0 (2026-03-11)
 - ✨ **目录批量导入**: 一次导入整个文件夹的所有视频
 - ✨ **视频预览列表**: 导入前查看文件列表
@@ -342,10 +424,15 @@ console.log(useAnnotationStore.getState())
 
 ## 未来规划
 
-### 短期 (v2.2)
+### 短期 (v2.3)
 - [ ] 撤销/重做功能
 - [ ] 节点搜索和过滤
 - [ ] 键盘快捷键自定义
+
+### 已完成 (v2.2)
+- [x] 快速路由复用标注
+- [x] 路由预选择器
+- [x] 简化快速标注对话框
 
 ### 中期 (v3.0)
 - [ ] 协作标注（WebRTC/WebSocket）
@@ -381,6 +468,9 @@ docs: 文档更新
 - [ ] 目录批量导入正常
 - [ ] 视频播放和帧导航流畅
 - [ ] 标注节点创建/编辑正确
+- [ ] **快速路由复用标注正常** (v2.2)
+- [ ] **RoutePreselector 显示正确** (v2.2)
+- [ ] **QuickMarkModal 快捷键工作正常** (v2.2)
 - [ ] JSON导出格式正确
 - [ ] SVG导出正常
 - [ ] 多视频切换无误
@@ -389,5 +479,5 @@ docs: 文档更新
 ---
 
 **维护者**: Claude Code
-**最后更新**: 2026-03-11
-**版本**: v2.1.0
+**最后更新**: 2026-03-17
+**版本**: v2.2.0

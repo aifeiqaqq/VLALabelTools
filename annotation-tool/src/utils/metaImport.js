@@ -27,24 +27,24 @@ export function validateMetaJson(data) {
     throw new Error('文件格式错误：某些节点缺少 state_description');
   }
 
+  // Note: project metadata is optional for backward compatibility with older meta files
+  // New files will include project.project_id, project.task_type, etc.
+
   return true;
 }
 
 /**
- * Normalize parent field from meta format
+ * Normalize parent field from meta format to array format
  * Handles: null, "001" (string), ["001", "002"] (array)
  *
  * @param {null|string|string[]} parents - Parent data from meta JSON
- * @returns {null|string} Normalized parent (first if array, or null)
+ * @returns {string[]} Normalized parent array
  */
 function normalizeParents(parents) {
-  if (!parents) return null;
-  if (typeof parents === 'string') return parents;
-  if (Array.isArray(parents)) {
-    // Return first parent as suggestion, or null if empty
-    return parents.length > 0 ? parents[0] : null;
-  }
-  return null;
+  if (!parents) return [];
+  if (typeof parents === 'string') return [parents];
+  if (Array.isArray(parents)) return parents; // 返回完整数组
+  return [];
 }
 
 /**
@@ -64,7 +64,7 @@ function normalizeParents(parents) {
  *   node_id: "001",
  *   state_description: "...",
  *   actions: [{target: "...", action_name: "..."}],
- *   node_meta: { suggested_parents: "001", imported_at: "..." },
+ *   node_meta: { suggested_parents: ["001"] | ["001", "002"], imported_at: "..." },
  *   video_segments: {},
  *   task_type: "drawer",
  *   annotator_id: "...",
@@ -149,5 +149,102 @@ export function importNodeLibrary(metaData, sessionData, existingNodes) {
     totalCount: Object.keys(transformedNodes).length,
     importCount: Object.keys(nonConflicts).length,
     skipCount: conflicts.length
+  };
+}
+
+/**
+ * Validate routes in meta JSON
+ * @param {Array} routes - Routes array from JSON
+ * @returns {boolean} True if valid
+ * @throws {Error} If validation fails
+ */
+export function validateRoutes(routes) {
+  if (!Array.isArray(routes)) {
+    throw new Error('路由数据格式错误：routes 必须是数组');
+  }
+
+  for (const route of routes) {
+    if (!route.route_id || typeof route.route_id !== 'string') {
+      throw new Error('路由数据格式错误：route_id 缺失或格式不正确');
+    }
+
+    if (!route.route_name || typeof route.route_name !== 'string') {
+      throw new Error('路由数据格式错误：route_name 缺失或格式不正确');
+    }
+
+    if (!Array.isArray(route.node_sequence) || route.node_sequence.length === 0) {
+      throw new Error(`路由 ${route.route_id} 的 node_sequence 必须是非空数组`);
+    }
+
+    // 验证所有节点ID都是字符串
+    if (!route.node_sequence.every(id => typeof id === 'string')) {
+      throw new Error(`路由 ${route.route_id} 的 node_sequence 包含无效的节点ID`);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Import routes from meta JSON
+ * @param {Object} metaData - Parsed meta JSON data
+ * @param {Object} existingNodes - Current nodes from annotationStore (for validation)
+ * @returns {Object} Import result with routes to import and warnings
+ */
+export function importRoutes(metaData, existingNodes) {
+  const routes = metaData.routes || [];
+
+  // If no routes in the file, return empty result
+  if (routes.length === 0) {
+    return {
+      routesToImport: {},
+      warnings: [],
+      totalCount: 0,
+      importCount: 0
+    };
+  }
+
+  // Validate format
+  try {
+    validateRoutes(routes);
+  } catch (error) {
+    throw new Error(`路由导入失败: ${error.message}`);
+  }
+
+  // Transform and validate routes
+  const routesToImport = {};
+  const warnings = [];
+
+  for (const route of routes) {
+    // Check if all nodes in the sequence exist
+    const missingNodes = route.node_sequence.filter(
+      nodeId => !existingNodes[nodeId]
+    );
+
+    if (missingNodes.length > 0) {
+      warnings.push({
+        routeId: route.route_id,
+        routeName: route.route_name,
+        message: `缺少节点: ${missingNodes.join(', ')}`,
+        missingNodes
+      });
+    }
+
+    // Import the route even if some nodes are missing
+    // The UI should handle this gracefully by showing warnings
+    routesToImport[route.route_id] = {
+      route_id: route.route_id,
+      route_name: route.route_name,
+      node_sequence: route.node_sequence,
+      created_at: new Date().toISOString(),
+      source_videos: [] // Will be populated as routes are used
+    };
+  }
+
+  return {
+    routesToImport,
+    warnings,
+    totalCount: routes.length,
+    importCount: Object.keys(routesToImport).length
   };
 }

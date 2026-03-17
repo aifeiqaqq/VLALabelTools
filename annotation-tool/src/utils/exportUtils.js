@@ -1,9 +1,11 @@
 /**
  * 导出标注数据为 JSON 文件 (v4.0 - Unified Node Model)
- * 
+ *
  * 文件名格式：{项目名}_{时间戳}.json
  * 例如：task_drawer_001_2026-03-08T10-30-00.json
  */
+
+import { extractRoutesFromProject } from './routeUtils';
 
 /**
  * 格式化日期为文件名安全格式
@@ -472,9 +474,11 @@ export async function exportProjectJson({
 
 /**
  * 导出项目 Graph Meta 简略版 (参考 graph_info.json 格式)
- * 
+ *
  * @param {Object} params - 导出参数
  * @param {string} params.projectId - 项目ID
+ * @param {string} params.annotatorId - 标注员ID
+ * @param {string} params.taskType - 任务类型
  * @param {string} params.sceneId - 场景 ID
  * @param {Object} params.nodes - 统一节点对象 { node_id: node }
  * @param {boolean} params.useFilePicker - 是否使用文件选择器（默认 true）
@@ -482,25 +486,42 @@ export async function exportProjectJson({
  */
 export async function exportProjectGraphMeta({
   projectId,
+  annotatorId,
+  taskType,
   sceneId,
   nodes,
+  videos,
   useFilePicker = true,
 }) {
+  // 提取路线
+  const extractedRoutes = await extractRoutesFromProject(nodes || {}, videos || []);
+  const routesArray = Object.values(extractedRoutes).map(route => ({
+    route_id: route.route_id,
+    route_name: route.route_name,
+    node_sequence: route.node_sequence
+  }));
+
   // 转换节点为 graph_info.json 格式
   const graphNodes = Object.values(nodes || {}).map((node) => {
     // 从所有 video_segments 中收集 parents
     const videoSegments = Object.values(node.video_segments || {});
     const parentSet = new Set();
-    
+
     videoSegments.forEach((segment) => {
-      if (segment.parent_node) {
-        parentSet.add(segment.parent_node);
+      const parentNodes = segment.parent_node;
+      if (parentNodes) {
+        // 处理数组和旧的字符串格式
+        if (Array.isArray(parentNodes)) {
+          parentNodes.forEach(p => parentSet.add(p));
+        } else if (typeof parentNodes === 'string') {
+          parentSet.add(parentNodes);
+        }
       }
     });
-    
-    const parents = parentSet.size === 0 
-      ? null 
-      : parentSet.size === 1 
+
+    const parents = parentSet.size === 0
+      ? null
+      : parentSet.size === 1
         ? Array.from(parentSet)[0]  // 单个 parent 用字符串
         : Array.from(parentSet);     // 多个 parent 用数组
 
@@ -526,7 +547,14 @@ export async function exportProjectGraphMeta({
 
   // 构建输出数据
   const data = {
+    project: {
+      project_id: projectId,
+      annotator_id: annotatorId,
+      task_type: taskType,
+      scene_id: sceneId,
+    },
     nodes: graphNodes,
+    routes: routesArray, // 添加路线数据
   };
 
   // 生成文件名

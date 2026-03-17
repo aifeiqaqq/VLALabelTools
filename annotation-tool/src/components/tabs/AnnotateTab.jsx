@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import VideoPlayer from '../video/VideoPlayer';
 import VideoControls from '../video/VideoControls';
 import MarkedFramesList from '../video/MarkedFramesList';
@@ -6,12 +6,14 @@ import StatsPanel from '../panels/StatsPanel';
 import SegmentsPanel from '../panels/SegmentsPanel';
 import MarkModal from '../annotation/MarkModal';
 import EditModal from '../annotation/EditModal';
+import RoutePreselector from '../annotation/RoutePreselector';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useMarkFrame } from '../../hooks/useMarkFrame';
+import { grabFrame } from '../../utils/videoUtils';
 import { useUIStore } from '../../stores/uiStore';
 import { useVideoStore } from '../../stores/videoStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { useAnnotationStore } from '../../stores/annotationStore';
+import { useAnnotationStore, normalizeParentNode } from '../../stores/annotationStore';
 import { TASK_SCHEMAS } from '../../constants/taskSchemas';
 import { S } from '../../constants/styles';
 
@@ -52,8 +54,30 @@ const AnnotateTab = React.memo(function AnnotateTab({
   deleteActionFromLibrary,
   incrementActionUseCount,
 }) {
-  // Mark frame hook
-  const { markFrame, confirmMark } = useMarkFrame(videoRef, canvasRef);
+  // Mark frame hook - v2.2: 支持快速模式（无弹窗）
+  const { markFrame, confirmMark, isInQuickMode, quickConfirmMark } = useMarkFrame(videoRef, canvasRef);
+  
+  // 快速模式下的待标注帧数据
+  const [quickCapture, setQuickCapture] = useState(null);
+  
+  // 从 store 获取快速模式相关信息
+  const activeRoute = useAnnotationStore((s) => s.activeRoute);
+  const routeProgress = useAnnotationStore((s) => s.routeProgress);
+  
+  // 获取当前快速模式节点信息
+  const quickNodeInfo = useMemo(() => {
+    if (!isInQuickMode || !activeRoute || !routeProgress) return null;
+    const { getNodeById } = useAnnotationStore.getState();
+    const currentNodeId = activeRoute.node_sequence[routeProgress.currentIndex];
+    const node = getNodeById(currentNodeId);
+    return {
+      nodeId: currentNodeId,
+      node,
+      progress: ((routeProgress.currentIndex + 1) / routeProgress.totalNodes) * 100,
+      current: routeProgress.currentIndex + 1,
+      total: routeProgress.totalNodes
+    };
+  }, [isInQuickMode, activeRoute, routeProgress]);
   
   // Video store - initial frame (使用 useShallow 避免无限循环)
   const setInitialFrame = useVideoStore((s) => s.setInitialFrame);
@@ -81,6 +105,8 @@ const AnnotateTab = React.memo(function AnnotateTab({
     setMarkMode,
     selNode,
     setSelectedNode,
+    selectedRouteId,
+    setSelectedRouteId,
     stateDesc,
     setStateDesc,
     metaVals,
@@ -103,13 +129,17 @@ const AnnotateTab = React.memo(function AnnotateTab({
     setEditDesc,
     setEditMeta,
     setEditParentNodeId,
+    // Quick mark mode state (v2.2)
+    preselectedRouteId,
+    setPreselectedRouteId,
+    clearPreselectedRoute,
   } = useUIStore();
 
   // Edit modal action editing state (local to AnnotateTab) - 支持多个动作
   const [editActions, setEditActions] = useState([]);
 
-  // Mark modal parent node state (local to AnnotateTab)
-  const [markParentNodeId, setMarkParentNodeId] = useState(null);
+  // Mark modal parent node state (local to AnnotateTab) - 数组格式支持多父节点
+  const [markParentNodeId, setMarkParentNodeId] = useState([]);
 
   const taskType = useSessionStore((s) => s.taskType);
   const taskSchema = TASK_SCHEMAS[taskType];
@@ -119,7 +149,9 @@ const AnnotateTab = React.memo(function AnnotateTab({
   const handleOpenEdit = React.useCallback((mark) => {
     const node = nodes.find(n => n.node_id === mark.node_id);
     if (node) {
-      openEditModal(mark, node.state_description, node.node_meta || {}, node.parent_node || null);
+      // 标准化父节点为数组格式
+      const normalizedParents = normalizeParentNode(node.parent_node);
+      openEditModal(mark, node.state_description, node.node_meta || {}, normalizedParents);
       // 初始化动作编辑状态（支持多个动作）
       if (node.actions && node.actions.length > 0) {
         setEditActions(node.actions.map(a => ({
@@ -133,6 +165,29 @@ const AnnotateTab = React.memo(function AnnotateTab({
       }
     }
   }, [nodes, openEditModal]);
+
+  // 选择路线处理 (v2.2: 支持预选择路由)
+  const handleSelectRoute = React.useCallback((routeId) => {
+    setSelectedRouteId(routeId);
+    setPreselectedRouteId(routeId);
+    if (routeId) {
+      const { setActiveRoute } = useAnnotationStore.getState();
+      setActiveRoute(routeId);
+    }
+  }, [setSelectedRouteId, setPreselectedRouteId]);
+
+  // 清除预选择路由
+  const handleClearRoute = React.useCallback(() => {
+    clearPreselectedRoute();
+    setSelectedRouteId(null);
+    const { resetRouteProgress } = useAnnotationStore.getState();
+    resetRouteProgress();
+  }, [clearPreselectedRoute, setSelectedRouteId]);
+
+  // 获取所有路由和路由状态 - 订阅 routes 对象本身，避免每次返回新数组
+  const routesData = useAnnotationStore((s) => s.routes);
+  const routes = useMemo(() => Object.values(routesData).sort((a, b) => a.route_id.localeCompare(b.route_id)), [routesData]);
+  // activeRoute 和 routeProgress 已在前面定义用于 quickNodeInfo
 
   // 确认编辑
   const handleConfirmEdit = React.useCallback(() => {
@@ -172,7 +227,7 @@ const AnnotateTab = React.memo(function AnnotateTab({
 
       updateNode(editMark.node_id, updates);
 
-      // 更新父节点关系（按视频）
+      // 更新父节点关系（按视频）- editParentNodeId 现在是数组格式
       if (editParentNodeId !== undefined && currentVideoId) {
         setNodeParent(editMark.node_id, currentVideoId, editParentNodeId);
       }
@@ -196,7 +251,9 @@ const AnnotateTab = React.memo(function AnnotateTab({
   const handleEditSegment = React.useCallback((node) => {
     // 创建一个虚拟的mark对象用于EditModal
     const virtualMark = { node_id: node.node_id };
-    openEditModal(virtualMark, node.state_description, node.node_meta || {}, node.parent_node || null);
+    // 标准化父节点为数组格式
+    const normalizedParents = normalizeParentNode(node.parent_node);
+    openEditModal(virtualMark, node.state_description, node.node_meta || {}, normalizedParents);
     // 初始化动作编辑状态（支持多个动作）
     if (node.actions && node.actions.length > 0) {
       setEditActions(node.actions.map(a => ({
@@ -224,7 +281,34 @@ const AnnotateTab = React.memo(function AnnotateTab({
     enabled: videoReady,
     seekFrame,
     currentFrame,
-    markFrame,
+    markFrame: () => {
+      console.log('[键盘快捷键] M键被按下, isInQuickMode:', isInQuickMode);
+      // v2.2: 快速模式下，markFrame 只捕获帧，不打开模态框
+      if (isInQuickMode) {
+        const v = videoRef.current;
+        const c = canvasRef.current;
+        console.log('[键盘快捷键] 快速模式, videoRef:', !!v, 'canvasRef:', !!c);
+        if (!v || !c) {
+          console.warn('[键盘快捷键] videoRef 或 canvasRef 为 null');
+          return;
+        }
+        if (currentFrame === 0) {
+          alert('第0帧是隐式起始帧，请从第二个关键帧开始标注');
+          return;
+        }
+        v.pause();
+        const thumb = grabFrame(v, c);
+        setQuickCapture({
+          frameIndex: currentFrame,
+          timestamp: v.currentTime,
+          thumb,
+        });
+        console.log('[键盘快捷键] 快速模式: 已捕获帧');
+      } else {
+        console.log('[键盘快捷键] 普通模式: 调用 markFrame()');
+        markFrame();
+      }
+    },
     togglePlay: () => {
       if (isPlaying) {
         videoRef.current?.pause();
@@ -233,6 +317,28 @@ const AnnotateTab = React.memo(function AnnotateTab({
       }
     },
   });
+  
+  // v2.2: 快速模式下监听 Enter 键确认标注
+  useEffect(() => {
+    if (!isInQuickMode) {
+      setQuickCapture(null);
+      return;
+    }
+    
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter' && quickCapture) {
+        e.preventDefault();
+        quickConfirmMark(quickCapture);
+        setQuickCapture(null);
+      } else if (e.key === 'Escape' && quickCapture) {
+        e.preventDefault();
+        setQuickCapture(null);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isInQuickMode, quickCapture, quickConfirmMark]);
 
   // MarkModal 动作建议（基于target过滤）
   const actionSuggestions = React.useMemo(() => {
@@ -253,6 +359,20 @@ const AnnotateTab = React.memo(function AnnotateTab({
     return [...new Set([...targets, ...commonTargets])].sort();
   }, [actionLibrary, taskType]);
 
+  // 计算快速模式的起始帧信息 - 使用节点数量作为依赖而非节点数组本身
+  const lastSegment = useMemo(() => {
+    if (!currentVideoId) return null;
+    const { getLastSegment } = useAnnotationStore.getState();
+    const { getInitialFrame } = useVideoStore.getState();
+    const initialFrame = getInitialFrame(currentVideoId);
+    const segment = getLastSegment(currentVideoId);
+    if (segment) {
+      return segment;
+    }
+    return initialFrame > 0 ? { to_frame: initialFrame, to_timestamp: initialFrame / (fps || 30) } : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentVideoId, nodes?.length, fps]);
+
   return (
     <div
       style={{
@@ -260,8 +380,42 @@ const AnnotateTab = React.memo(function AnnotateTab({
         gridTemplateColumns: '1fr minmax(300px, 400px)',
         height: '100%',
         overflow: 'hidden',
+        // v2.2: 快速模式下显示橙色边框
+        boxSizing: 'border-box',
+        border: isInQuickMode ? (quickCapture ? '4px solid #f97316' : '2px solid #f97316') : 'none',
       }}
     >
+      {/* v2.2: 快速模式状态提示条 */}
+      {isInQuickMode && quickNodeInfo && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          background: '#f97316',
+          color: '#fff',
+          padding: '8px 16px',
+          fontSize: 13,
+          fontWeight: 600,
+          zIndex: 100,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <span>
+            ⚡ 快速标注模式: {quickNodeInfo.node?.state_description || quickNodeInfo.nodeId}
+            {quickNodeInfo.node?.actions?.length > 0 && (
+              <span style={{ marginLeft: 8, opacity: 0.9 }}>
+                ({quickNodeInfo.node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')})
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: 12 }}>
+            {quickCapture ? '按 Enter 确认 | Esc 取消' : `进度: ${quickNodeInfo.current}/${quickNodeInfo.total}`}
+          </span>
+        </div>
+      )}
+      
       {/* LEFT: Video + Controls + Marks */}
       <div
         style={{
@@ -270,6 +424,8 @@ const AnnotateTab = React.memo(function AnnotateTab({
           gap: 0,
           overflowY: 'auto',
           borderRight: '1px solid #e5e5e5',
+          // v2.2: 快速模式下为顶部状态条留出空间
+          paddingTop: isInQuickMode ? '40px' : 0,
         }}
       >
         <VideoPlayer
@@ -283,6 +439,20 @@ const AnnotateTab = React.memo(function AnnotateTab({
           onPlay={onPlay}
           onPause={onPause}
         />
+
+        {/* v2.2: 路由预选择器 */}
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid #e5e5e5', background: '#fafafa' }}>
+          <RoutePreselector
+            routes={routes}
+            selectedRouteId={preselectedRouteId}
+            onSelectRoute={handleSelectRoute}
+            onClearRoute={handleClearRoute}
+            activeRoute={activeRoute}
+            routeProgress={routeProgress}
+            allNodes={allNodes}
+          />
+        </div>
+
         <VideoControls
           currentFrame={currentFrame}
           totalFrames={totalFrames}
@@ -351,6 +521,8 @@ const AnnotateTab = React.memo(function AnnotateTab({
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
+          // v2.2: 快速模式下为顶部状态条留出空间
+          paddingTop: isInQuickMode ? '54px' : 14,
         }}
       >
         <StatsPanel
@@ -368,7 +540,7 @@ const AnnotateTab = React.memo(function AnnotateTab({
       <MarkModal
         isOpen={showMark}
         onClose={() => {
-          setMarkParentNodeId(null);
+          setMarkParentNodeId([]);
           closeMarkModal();
         }}
         pendingCapture={pendingCap}
@@ -378,6 +550,8 @@ const AnnotateTab = React.memo(function AnnotateTab({
         allNodes={allNodes}
         selectedNodeId={selNode}
         onSelectNode={setSelectedNode}
+        selectedRouteId={selectedRouteId}
+        onSelectRoute={handleSelectRoute}
         stateDescription={stateDesc}
         onStateDescriptionChange={setStateDesc}
         metaValues={metaVals}
@@ -389,7 +563,7 @@ const AnnotateTab = React.memo(function AnnotateTab({
         onParentNodeChange={setMarkParentNodeId}
         onConfirm={(parentNodeId, actions) => {
           confirmMark(parentNodeId, actions);
-          setMarkParentNodeId(null);
+          setMarkParentNodeId([]);
         }}
       />
 
@@ -495,6 +669,8 @@ const AnnotateTab = React.memo(function AnnotateTab({
           closeEditModal();
         }}
       />
+
+      {/* v2.2: 快速标注模式已改为无弹窗设计，直接在主界面显示橙色边框提示 */}
     </div>
   );
 });

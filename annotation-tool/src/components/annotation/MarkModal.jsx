@@ -4,6 +4,8 @@ import Modal from '../common/Modal';
 import ModalHeader from '../common/ModalHeader';
 import NodeModeSelector from './NodeModeSelector';
 import NodeSelector from './NodeSelector';
+import RouteSelector from './RouteSelector';
+import RouteProgressIndicator from './RouteProgressIndicator';
 import MetaForm from './MetaForm';
 import { useAnnotationStore } from '../../stores/annotationStore';
 import { useVideoStore } from '../../stores/videoStore';
@@ -176,6 +178,8 @@ const MarkModal = React.memo(function MarkModal({
   allNodes,
   selectedNodeId,
   onSelectNode,
+  selectedRouteId,
+  onSelectRoute,
   stateDescription,
   onStateDescriptionChange,
   metaValues,
@@ -187,7 +191,7 @@ const MarkModal = React.memo(function MarkModal({
 }) {
   const { currentVideoId } = useVideoStore();
   const { taskType } = useSessionStore();
-  const { getLastSegment, actionLib } = useAnnotationStore();
+  const { getLastSegment, actionLib, getAllRoutes, activeRoute, routeProgress } = useAnnotationStore();
 
   // 本地状态：动作列表
   const [actions, setActions] = useState([]);
@@ -226,14 +230,23 @@ const MarkModal = React.memo(function MarkModal({
       }));
   };
 
+  // 获取所有可用路线
+  const allRoutes = useMemo(() => {
+    return getAllRoutes();
+  }, [getAllRoutes]);
+
   // 计算确认按钮是否可用
   const canConfirm = useMemo(() => {
     if (mode === 'new') {
       return stateDescription.trim().length > 0;
-    } else {
+    } else if (mode === 'existing') {
       return selectedNodeId != null;
+    } else if (mode === 'route') {
+      // 路线模式：需要已激活路线
+      return activeRoute != null && routeProgress != null;
     }
-  }, [mode, stateDescription, selectedNodeId]);
+    return false;
+  }, [mode, stateDescription, selectedNodeId, activeRoute, routeProgress]);
 
   // 可选的父段落（从当前视频的nodes中筛选）
   const availableParentNodes = useMemo(() => {
@@ -348,11 +361,12 @@ const MarkModal = React.memo(function MarkModal({
         />
       )}
 
-      {/* 模式选择 */}
+      {/* 模式选择 - v2.2: 当预选择路由存在时隐藏路由选项 */}
       <NodeModeSelector
         mode={mode}
         onModeChange={onModeChange}
         existingNodeCount={uniqueNodesForReuse.length}
+        existingRouteCount={allRoutes.length}
       />
 
       {/* 新建段落表单 */}
@@ -375,33 +389,20 @@ const MarkModal = React.memo(function MarkModal({
             />
           </div>
 
-          {/* 父段落选择 */}
+          {/* 父段落选择 - 支持多选 */}
           {availableParentNodes.length > 0 && (
             <div style={{ marginBottom: 4 }}>
               <label style={S.label}>
-                父段落（逻辑来源）<span style={{color: '#999', fontWeight: 400}}>(可选)</span>
-                {parentNodeId && (
+                父段落（逻辑来源）<span style={{color: '#999', fontWeight: 400}}>(可选，可多选)</span>
+                {parentNodeId && Array.isArray(parentNodeId) && parentNodeId.length > 0 && (
                   <span style={{ color: '#f59e0b', marginLeft: 8, fontSize: 11 }}>
-                    {parentNodeId} → 新段落
+                    已选 {parentNodeId.length} 个
                   </span>
                 )}
               </label>
-              
-              <div style={{ marginBottom: 8 }}>
-                <button
-                  onClick={() => onParentNodeChange(null)}
-                  style={{
-                    ...S.btn(!parentNodeId),
-                    width: '100%',
-                    padding: '8px',
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>无父段落（起始段落）</span>
-                  <span style={{ color: '#666', marginLeft: 8, fontSize: 11 }}>
-                    这是任务的起始状态
-                  </span>
-                </button>
+
+              <div style={{ fontSize: 10, color: '#888', marginBottom: 6 }}>
+                勾选一个或多个父节点，表示该段落由这些状态转换而来
               </div>
 
               <div
@@ -414,34 +415,51 @@ const MarkModal = React.memo(function MarkModal({
                 }}
               >
                 {availableParentNodes.map((node) => {
-                  const isSelected = parentNodeId === node.node_id;
+                  const selectedParents = Array.isArray(parentNodeId) ? parentNodeId : (parentNodeId ? [parentNodeId] : []);
+                  const isSelected = selectedParents.includes(node.node_id);
+
                   return (
-                    <div
+                    <label
                       key={node.node_id}
-                      onClick={() => onParentNodeChange(node.node_id)}
                       style={{
                         padding: '8px 10px',
                         borderRadius: 6,
                         cursor: 'pointer',
                         border: `2px solid ${isSelected ? '#f59e0b' : '#e5e5e5'}`,
                         background: isSelected ? '#f59e0b0d' : '#f9f7f4',
+                        display: 'block',
                       }}
                     >
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
-                        <span style={{ ...S.pill('#f59e0b'), fontSize: 10, padding: '2px 6px' }}>{node.node_id}</span>
-                        <span style={{ fontSize: 10, color: '#888' }}>
-                          帧 {node.from_frame}→{node.to_frame}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                        {node.state_description}
-                      </div>
-                      {node.actions && node.actions.length > 0 && (
-                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
-                          ⚡ {node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            const newParents = isSelected
+                              ? selectedParents.filter(id => id !== node.node_id)
+                              : [...selectedParents, node.node_id];
+                            onParentNodeChange(newParents);
+                          }}
+                          style={{ marginTop: 2, cursor: 'pointer' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                            <span style={{ ...S.pill('#f59e0b'), fontSize: 10, padding: '2px 6px' }}>{node.node_id}</span>
+                            <span style={{ fontSize: 10, color: '#888' }}>
+                              帧 {node.from_frame}→{node.to_frame}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                            {node.state_description}
+                          </div>
+                          {node.actions && node.actions.length > 0 && (
+                            <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
+                              ⚡ {node.actions.map(a => `${a.target}·${a.action_name}`).join(', ')}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    </label>
                   );
                 })}
               </div>
@@ -468,30 +486,20 @@ const MarkModal = React.memo(function MarkModal({
             onSelect={onSelectNode}
           />
           
-          {/* 复用模式下的父节点选择 */}
+          {/* 复用模式下的父节点选择 - 支持多选 */}
           {availableParentNodes.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <label style={S.label}>
-                父段落（逻辑来源）<span style={{color: '#999', fontWeight: 400}}>(可选)</span>
-                {parentNodeId && (
+                父段落（逻辑来源）<span style={{color: '#999', fontWeight: 400}}>(可选，可多选)</span>
+                {parentNodeId && Array.isArray(parentNodeId) && parentNodeId.length > 0 && (
                   <span style={{ color: '#f59e0b', marginLeft: 8, fontSize: 11 }}>
-                    {parentNodeId} → 复用段落
+                    已选 {parentNodeId.length} 个
                   </span>
                 )}
               </label>
-              
-              <div style={{ marginBottom: 8 }}>
-                <button
-                  onClick={() => onParentNodeChange(null)}
-                  style={{
-                    ...S.btn(!parentNodeId),
-                    width: '100%',
-                    padding: '8px',
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>无父段落（起始段落）</span>
-                </button>
+
+              <div style={{ fontSize: 10, color: '#888', marginBottom: 6 }}>
+                勾选一个或多个父节点，表示该段落由这些状态转换而来
               </div>
 
               <div
@@ -504,31 +512,117 @@ const MarkModal = React.memo(function MarkModal({
                 }}
               >
                 {availableParentNodes.map((node) => {
-                  const isSelected = parentNodeId === node.node_id;
+                  const selectedParents = Array.isArray(parentNodeId) ? parentNodeId : (parentNodeId ? [parentNodeId] : []);
+                  const isSelected = selectedParents.includes(node.node_id);
+
                   return (
-                    <div
+                    <label
                       key={node.node_id}
-                      onClick={() => onParentNodeChange(node.node_id)}
                       style={{
                         padding: '8px 10px',
                         borderRadius: 6,
                         cursor: 'pointer',
                         border: `2px solid ${isSelected ? '#f59e0b' : '#e5e5e5'}`,
                         background: isSelected ? '#f59e0b0d' : '#f9f7f4',
+                        display: 'block',
                       }}
                     >
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
-                        <span style={{ ...S.pill('#f59e0b'), fontSize: 10, padding: '2px 6px' }}>{node.node_id}</span>
-                        <span style={{ fontSize: 10, color: '#888' }}>
-                          帧 {node.from_frame}→{node.to_frame}
-                        </span>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            const newParents = isSelected
+                              ? selectedParents.filter(id => id !== node.node_id)
+                              : [...selectedParents, node.node_id];
+                            onParentNodeChange(newParents);
+                          }}
+                          style={{ marginTop: 2, cursor: 'pointer' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                            <span style={{ ...S.pill('#f59e0b'), fontSize: 10, padding: '2px 6px' }}>{node.node_id}</span>
+                            <span style={{ fontSize: 10, color: '#888' }}>
+                              帧 {node.from_frame}→{node.to_frame}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                            {node.state_description}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                        {node.state_description}
-                      </div>
-                    </div>
+                    </label>
                   );
                 })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 复用路由模式 */}
+      {mode === 'route' && (
+        <div style={{ marginBottom: 12 }}>
+          {/* 显示进度指示器（如果路线已激活） */}
+          {activeRoute && routeProgress && (
+            <RouteProgressIndicator
+              route={activeRoute}
+              currentIndex={routeProgress.currentIndex}
+              allNodes={allNodes}
+            />
+          )}
+
+          {/* 路线选择器（如果路线未激活） */}
+          {!activeRoute && (
+            <RouteSelector
+              routes={allRoutes}
+              selectedRouteId={selectedRouteId}
+              onSelect={onSelectRoute}
+              allNodes={allNodes}
+            />
+          )}
+
+          {/* 自动填充提示（如果路线已激活） */}
+          {activeRoute && routeProgress && (
+            <div
+              style={{
+                background: '#f5f3ff',
+                padding: 14,
+                borderRadius: 6,
+                border: '1px solid #c4b5fd',
+                marginTop: 12
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#8b5cf6',
+                  fontWeight: 600,
+                  marginBottom: 8,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
+                }}
+              >
+                自动填充的字段:
+              </div>
+              <div style={{ fontSize: 12, color: '#1f2937', lineHeight: '1.6' }}>
+                ✓ 状态描述<br />
+                ✓ 动作列表<br />
+                ✓ 节点元数据<br />
+                ✓ 父节点关系
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: '#f59e0b',
+                  marginTop: 10,
+                  padding: '8px',
+                  background: '#fff',
+                  borderRadius: 4,
+                  fontWeight: 500
+                }}
+              >
+                💡 您只需确认帧范围即可
               </div>
             </div>
           )}
@@ -613,8 +707,10 @@ const MarkModal = React.memo(function MarkModal({
         }}
         aria-disabled={!canConfirm}
       >
-        {mode === 'new' 
-          ? `确认标注新段落${actions.length > 0 ? ` (${actions.length} 个动作)` : ''}` 
+        {mode === 'new'
+          ? `确认标注新段落${actions.length > 0 ? ` (${actions.length} 个动作)` : ''}`
+          : mode === 'route'
+          ? `确认标注路由节点${routeProgress ? ` (${routeProgress.currentIndex + 1}/${routeProgress.totalNodes})` : ''}`
           : `确认复用段落${actions.length > 0 ? ` (${actions.length} 个动作)` : ''}`
         }
       </button>
