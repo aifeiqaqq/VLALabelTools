@@ -14,17 +14,34 @@ export function useFrameNavigation(videoRef, fpsRef) {
 
   /**
    * 立即 seek（用于键盘快捷键等）
+   * 添加性能保护：检查seeking状态和最小帧差
    */
   const seekFrame = useCallback((frameIndex) => {
     const v = videoRef.current;
     if (!v || !videoReady) return;
 
-    seekFrameStore(frameIndex);
-    setIsSeeking(true);
-    v.pause();
+    // 性能保护1：如果正在seeking，跳过本次操作
+    if (v.seeking) return;
 
     const clampedFrame = Math.max(0, Math.min(frameIndex, totalFrames - 1));
-    v.currentTime = clampedFrame / fpsRef.current;
+    const targetTime = clampedFrame / fpsRef.current;
+
+    // 性能保护2：只有时间差>0.05秒（约1.5帧@30fps）时才seek
+    // 避免无意义的微小跳转给解码器造成压力
+    if (Math.abs(v.currentTime - targetTime) < 0.05) return;
+
+    // 使用RAF调度seek，避免阻塞主线程
+    requestAnimationFrame(() => {
+      try {
+        seekFrameStore(clampedFrame);
+        setIsSeeking(true);
+        v.pause();
+        v.currentTime = targetTime;
+      } catch (err) {
+        // Firefox在HEVC视频快速seek时可能抛出错误
+        console.warn('Seek error:', err);
+      }
+    });
   }, [videoReady, totalFrames, seekFrameStore, setIsSeeking, videoRef, fpsRef]);
 
   /**

@@ -68,9 +68,9 @@ export function useKeyboardShortcuts({
    */
   const getThrottleInterval = useCallback((pressDuration) => {
     if (pressDuration < 500) return 60;      // 初始阶段: 60ms（高响应）
-    if (pressDuration < 1500) return 80;     // 加速阶段1: 80ms
-    if (pressDuration < 3000) return 100;    // 加速阶段2: 100ms
-    return 120;                               // 最快阶段: 120ms（降低负载）
+    if (pressDuration < 1500) return 100;    // 加速阶段1: 100ms（优化性能）
+    if (pressDuration < 3000) return 130;    // 加速阶段2: 130ms（降低解码压力）
+    return 150;                               // 最快阶段: 150ms（大幅降低负载）
   }, []);
 
   // 更新 ref 值
@@ -120,10 +120,10 @@ export function useKeyboardShortcuts({
           seekFrameRef.current(newFrame);
           break;
         }
-        case "m":
-        case "M":
+        case "a":
+        case "A":
           e.preventDefault();
-          console.log('[useKeyboardShortcuts] M键被按下, markFrameRef:', typeof markFrameRef.current);
+          console.log('[useKeyboardShortcuts] A键被按下, markFrameRef:', typeof markFrameRef.current);
           markFrameRef.current();
           break;
         case " ":

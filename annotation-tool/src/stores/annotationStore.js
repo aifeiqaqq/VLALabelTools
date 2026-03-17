@@ -231,18 +231,16 @@ export const useAnnotationStore = create((set, get) => ({
   }),
 
   // 删除节点在指定视频的段落
+  // 注意：只删除video_segments中的对应视频，保留节点定义
+  // 这样从JSON导入的节点分类会被保留，即使在所有视频中都没有实例
   deleteNodeVideoSegment: (nodeId, videoId) => set((state) => {
     const node = state.nodes[nodeId];
     if (!node) return state;
-    
+
     const { [videoId]: _, ...remainingSegments } = node.video_segments;
-    
-    // 如果该节点在所有视频中都没有段落了，则删除整个节点
-    if (Object.keys(remainingSegments).length === 0) {
-      const { [nodeId]: _, ...remainingNodes } = state.nodes;
-      return { nodes: remainingNodes };
-    }
-    
+
+    // 保留节点定义，只删除当前视频的segment
+    // 即使remainingSegments为空，也保留节点（用于导入的节点分类）
     return {
       nodes: {
         ...state.nodes,

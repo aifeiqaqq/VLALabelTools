@@ -276,7 +276,7 @@ const VideoControls = React.memo(function VideoControls({
 
       {/* Shortcuts hint */}
       <div style={{ marginTop: 6, fontSize: 11, color: "#888" }}>
-        键盘：← → 移帧 (长按加速) · Shift 快速跨越 · Space 播放 · M 打标
+        键盘：← → 移帧 (长按加速) · Shift 快速跨越 · Space 播放 · A 打标
       </div>
     </div>
   );
