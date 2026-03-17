@@ -13,11 +13,15 @@ export const TASK_SCHEMAS = {
   water: {
     kettle_state: { type: "enum", options: ["off", "heating", "boiled"], label: "水壶状态" },
     water_level: { type: "enum", options: ["empty", "low", "full"], label: "水位" },
+  },
+  gift: {
+    box_state: { type: "enum", options: ["closed", "open"], label: "盒子状态" },
   }
 };
 
 export const TASK_LABELS = {
-  drawer: "拉抽屉放东西",
+  drawer: "拉抽屉",
   coffee_machine: "咖啡机操作",
   water: "水壶操作",
+  gift: "打开礼物盒",
 };

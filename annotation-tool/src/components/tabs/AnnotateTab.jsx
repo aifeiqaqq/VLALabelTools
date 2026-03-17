@@ -493,7 +493,7 @@ const AnnotateTab = React.memo(function AnnotateTab({
                 opacity: videoReady ? 1 : 0.5,
               }}
             >
-              🎯 标注关键帧 (M)
+              🎯 标注关键帧 (A)
             </button>
           </div>
           {hasInitialFrame && (
