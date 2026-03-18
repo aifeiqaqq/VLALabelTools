@@ -21,7 +21,9 @@ const RoutePreselector = React.memo(function RoutePreselector({
   onClearRoute,
   activeRoute,
   routeProgress,
-  allNodes
+  allNodes,
+  onRetreat,  // 后退回调
+  onJumpToNode  // 新增：跳转到指定节点回调
 }) {
   // 获取当前节点的信息
   const currentNodeInfo = useMemo(() => {
@@ -83,21 +85,40 @@ const RoutePreselector = React.memo(function RoutePreselector({
               {activeRoute.route_name}
             </span>
           </div>
-          <button
-            onClick={onClearRoute}
-            style={{
-              fontSize: 11,
-              padding: '4px 10px',
-              background: '#fee2e2',
-              border: '1px solid #fecaca',
-              borderRadius: 4,
-              color: '#dc2626',
-              cursor: 'pointer',
-              fontWeight: 500
-            }}
-          >
-            退出快速模式
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={onRetreat}
+              disabled={routeProgress.currentIndex === 0}
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                background: routeProgress.currentIndex === 0 ? '#f3f4f6' : '#fef3c7',
+                border: routeProgress.currentIndex === 0 ? '1px solid #e5e7eb' : '1px solid #fde68a',
+                borderRadius: 4,
+                color: routeProgress.currentIndex === 0 ? '#9ca3af' : '#d97706',
+                cursor: routeProgress.currentIndex === 0 ? 'not-allowed' : 'pointer',
+                fontWeight: 500
+              }}
+              title="回退到上一个节点"
+            >
+              ← 后退
+            </button>
+            <button
+              onClick={onClearRoute}
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                background: '#fee2e2',
+                border: '1px solid #fecaca',
+                borderRadius: 4,
+                color: '#dc2626',
+                cursor: 'pointer',
+                fontWeight: 500
+              }}
+            >
+              退出快速模式
+            </button>
+          </div>
         </div>
 
         {/* 进度条 */}
@@ -115,6 +136,58 @@ const RoutePreselector = React.memo(function RoutePreselector({
             borderRadius: 3,
             transition: 'width 0.3s ease'
           }} />
+        </div>
+
+        {/* 节点序列选择器 */}
+        <div style={{
+          display: 'flex',
+          gap: 4,
+          flexWrap: 'wrap',
+          marginBottom: 8,
+          padding: '8px',
+          background: '#fff',
+          borderRadius: 4,
+          border: '1px solid #e9d5ff'
+        }}>
+          {activeRoute.node_sequence.map((nodeId, index) => {
+            const isCurrent = index === routeProgress.currentIndex;
+            const isPast = index < routeProgress.currentIndex;
+            const node = allNodes?.find(n => n.node_id === nodeId);
+
+            return (
+              <button
+                key={`${nodeId}-${index}`}
+                onClick={() => onJumpToNode && onJumpToNode(index)}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: 11,
+                  fontWeight: isCurrent ? 600 : 500,
+                  background: isCurrent ? '#8b5cf6' : isPast ? '#e9d5ff' : '#f3f4f6',
+                  color: isCurrent ? '#fff' : isPast ? '#6b21a8' : '#6b7280',
+                  border: isCurrent ? '2px solid #6b21a8' : '1px solid transparent',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.2s ease'
+                }}
+                title={node ? `${nodeId}: ${node.state_description}` : nodeId}
+                onMouseEnter={(e) => {
+                  if (!isCurrent) {
+                    e.target.style.background = '#ddd6fe';
+                    e.target.style.transform = 'scale(1.05)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isCurrent) {
+                    e.target.style.background = isPast ? '#e9d5ff' : '#f3f4f6';
+                    e.target.style.transform = 'scale(1)';
+                  }
+                }}
+              >
+                {nodeId}
+              </button>
+            );
+          })}
         </div>
 
         {/* 当前节点信息 */}
@@ -142,7 +215,7 @@ const RoutePreselector = React.memo(function RoutePreselector({
             )}
           </div>
           <span style={{ color: '#8b5cf6', fontWeight: 500, fontSize: 11 }}>
-            按 M 键快速标注
+            A 标注 · S 跳过
           </span>
         </div>
 
@@ -203,11 +276,30 @@ const RoutePreselector = React.memo(function RoutePreselector({
         }}
       >
         <option value="">-- 选择要复用的路由 --</option>
-        {routes.map(route => (
-          <option key={route.route_id} value={route.route_id}>
-            {route.route_name} ({route.node_sequence.length} 个节点)
-          </option>
-        ))}
+        {routes.map(route => {
+          // 计算唯一节点数
+          const uniqueNodes = new Set(route.node_sequence);
+          const totalSteps = route.node_sequence.length;
+          const uniqueCount = uniqueNodes.size;
+
+          // 检查缺失的节点
+          const missingNodes = Array.from(uniqueNodes).filter(nodeId => !allNodes?.find(n => n.node_id === nodeId));
+
+          let label = `${route.route_name} (${totalSteps}步`;
+          if (uniqueCount !== totalSteps) {
+            label += `, ${uniqueCount}个唯一节点`;
+          }
+          if (missingNodes.length > 0) {
+            label += ` ⚠️ 缺失${missingNodes.length}个`;
+          }
+          label += ')';
+
+          return (
+            <option key={route.route_id} value={route.route_id}>
+              {label}
+            </option>
+          );
+        })}
       </select>
 
       {selectedRouteId && (

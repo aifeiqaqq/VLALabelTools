@@ -7,14 +7,24 @@
  * Extract node sequence from video segments
  * 从视频片段提取节点序列
  * @param {Array} segments - Video segments with from_frame and node_id
+ * @param {boolean} deduplicateConsecutive - 是否去除连续重复的节点（默认false）
  * @returns {Array} Ordered array of node_ids
  */
-export function extractNodeSequence(segments) {
+export function extractNodeSequence(segments, deduplicateConsecutive = false) {
   if (!segments || segments.length === 0) return [];
 
-  return segments
+  const sequence = segments
     .sort((a, b) => a.from_frame - b.from_frame)
     .map(seg => seg.node_id);
+
+  // 可选：去除连续重复的节点（如 ["001", "002", "002", "003"] → ["001", "002", "003"]）
+  if (deduplicateConsecutive) {
+    return sequence.filter((nodeId, index) => {
+      return index === 0 || nodeId !== sequence[index - 1];
+    });
+  }
+
+  return sequence;
 }
 
 /**
@@ -40,11 +50,16 @@ export async function generateSequenceHash(nodeSequence) {
 /**
  * Extract all unique routes from project videos
  * 从项目视频中提取所有唯一路线
+ *
+ * 修改：从marks提取序列而不是从nodes.video_segments
+ * 原因：marks支持同一节点在同一视频中多次出现（如001→002→003→002）
+ *
  * @param {Object} nodes - Unified nodes object from annotationStore
  * @param {Array} videos - Array of video objects
+ * @param {Object} marks - Marks object from annotationStore (按视频分组)
  * @returns {Promise<Object>} Routes object keyed by route_id
  */
-export async function extractRoutesFromProject(nodes, videos) {
+export async function extractRoutesFromProject(nodes, videos, marks = {}) {
   if (!nodes || !videos || videos.length === 0) {
     return {};
   }
@@ -53,22 +68,53 @@ export async function extractRoutesFromProject(nodes, videos) {
 
   // Step 1: Extract sequences from each video
   for (const video of videos) {
-    // Get all segments for this video
-    const videoSegments = Object.values(nodes)
-      .filter(node => node.video_segments && node.video_segments[video.id])
-      .map(node => ({
-        node_id: node.node_id,
-        from_frame: node.video_segments[video.id].from_frame,
-        to_frame: node.video_segments[video.id].to_frame
-      }));
+    // 优先从marks提取序列（支持重复节点）
+    const videoMarks = marks[video.id] || [];
 
-    // Skip videos without annotations
-    if (videoSegments.length === 0) {
-      continue;
+    let sequence;
+
+    if (videoMarks.length > 0) {
+      // 从marks提取：按frame_index排序，提取node_id
+      // 这样可以保留同一节点的多次出现
+      const rawSequence = videoMarks
+        .sort((a, b) => a.frame_index - b.frame_index)
+        .map(mark => mark.node_id);
+
+      console.log(`[Route Extract] Video ${video.id}: Raw sequence length = ${rawSequence.length}`);
+
+      // 去除连续重复的节点（通常是误操作导致）
+      // 例如：["001", "002", "002", "003"] → ["001", "002", "003"]
+      // 但保留非连续的重复（如 ["001", "002", "003", "002"] 保持不变）
+      sequence = rawSequence.filter((nodeId, index) => {
+        return index === 0 || nodeId !== rawSequence[index - 1];
+      });
+
+      console.log(`[Route Extract] Video ${video.id}: Deduplicated sequence length = ${sequence.length}`);
+      if (rawSequence.length !== sequence.length) {
+        console.log(`[Route Extract] Removed ${rawSequence.length - sequence.length} consecutive duplicates`);
+      }
+    } else {
+      // 降级方案：从nodes.video_segments提取（兼容旧数据）
+      const videoSegments = Object.values(nodes)
+        .filter(node => node.video_segments && node.video_segments[video.id])
+        .map(node => ({
+          node_id: node.node_id,
+          from_frame: node.video_segments[video.id].from_frame,
+          to_frame: node.video_segments[video.id].to_frame
+        }));
+
+      // Skip videos without annotations
+      if (videoSegments.length === 0) {
+        continue;
+      }
+
+      sequence = extractNodeSequence(videoSegments, true); // 启用去重
     }
 
-    // Extract node sequence
-    const sequence = extractNodeSequence(videoSegments);
+    // Skip empty sequences
+    if (!sequence || sequence.length === 0) {
+      continue;
+    }
 
     // Generate hash for deduplication
     const hash = await generateSequenceHash(sequence);

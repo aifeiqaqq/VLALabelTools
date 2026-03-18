@@ -320,13 +320,14 @@ function AnnotationPage({ projectId, onBack }) {
         sceneId,
         nodes,
         videos,
+        marks,  // 添加marks参数以支持重复节点的路由
       });
       console.log('Graph Meta 导出成功');
     } catch (error) {
       console.error('导出 Graph Meta 失败:', error);
       alert('导出 Graph Meta 失败: ' + error.message);
     }
-  }, [projectId, annotatorId, taskType, sceneId, nodes, videos]);
+  }, [projectId, annotatorId, taskType, sceneId, nodes, videos, marks]);
 
   // === Import Meta JSON Handler ===
   const handleImportMeta = useCallback(async () => {

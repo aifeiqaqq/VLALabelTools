@@ -184,6 +184,18 @@ const AnnotateTab = React.memo(function AnnotateTab({
     resetRouteProgress();
   }, [clearPreselectedRoute, setSelectedRouteId]);
 
+  // 后退到上一个节点
+  const handleRetreat = React.useCallback(() => {
+    const { retreatRouteProgress } = useAnnotationStore.getState();
+    retreatRouteProgress();
+  }, []);
+
+  // 跳转到指定节点索引
+  const handleJumpToNode = React.useCallback((index) => {
+    const { setRouteProgressIndex } = useAnnotationStore.getState();
+    setRouteProgressIndex(index);
+  }, []);
+
   // 获取所有路由和路由状态 - 订阅 routes 对象本身，避免每次返回新数组
   const routesData = useAnnotationStore((s) => s.routes);
   const routes = useMemo(() => Object.values(routesData).sort((a, b) => a.route_id.localeCompare(b.route_id)), [routesData]);
@@ -324,7 +336,7 @@ const AnnotateTab = React.memo(function AnnotateTab({
       setQuickCapture(null);
       return;
     }
-    
+
     const handleKeyDown = (e) => {
       if (e.key === 'Enter' && quickCapture) {
         e.preventDefault();
@@ -333,9 +345,21 @@ const AnnotateTab = React.memo(function AnnotateTab({
       } else if (e.key === 'Escape' && quickCapture) {
         e.preventDefault();
         setQuickCapture(null);
+      } else if ((e.key === 's' || e.key === 'S') && !quickCapture) {
+        // S键: 跳过当前节点
+        e.preventDefault();
+        const { advanceRouteProgress, routeProgress: currentProgress, activeRoute: currentRoute } = useAnnotationStore.getState();
+        if (currentProgress && currentRoute) {
+          if (currentProgress.currentIndex < currentRoute.node_sequence.length - 1) {
+            advanceRouteProgress();
+            console.log('[快速模式] 跳过当前节点');
+          } else {
+            alert('已到达路由末尾，无法继续跳过');
+          }
+        }
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isInQuickMode, quickCapture, quickConfirmMark]);
@@ -411,7 +435,7 @@ const AnnotateTab = React.memo(function AnnotateTab({
             )}
           </span>
           <span style={{ fontSize: 12 }}>
-            {quickCapture ? '按 Enter 确认 | Esc 取消' : `进度: ${quickNodeInfo.current}/${quickNodeInfo.total}`}
+            {quickCapture ? '按 Enter 确认 | Esc 取消' : `进度: ${quickNodeInfo.current}/${quickNodeInfo.total} | 按 S 跳过`}
           </span>
         </div>
       )}
@@ -447,6 +471,8 @@ const AnnotateTab = React.memo(function AnnotateTab({
             selectedRouteId={preselectedRouteId}
             onSelectRoute={handleSelectRoute}
             onClearRoute={handleClearRoute}
+            onRetreat={handleRetreat}
+            onJumpToNode={handleJumpToNode}
             activeRoute={activeRoute}
             routeProgress={routeProgress}
             allNodes={allNodes}

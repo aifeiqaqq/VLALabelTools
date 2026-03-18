@@ -481,6 +481,8 @@ export async function exportProjectJson({
  * @param {string} params.taskType - 任务类型
  * @param {string} params.sceneId - 场景 ID
  * @param {Object} params.nodes - 统一节点对象 { node_id: node }
+ * @param {Array} params.videos - 视频列表
+ * @param {Object} params.marks - 标记对象（按视频分组），用于提取支持重复节点的路由
  * @param {boolean} params.useFilePicker - 是否使用文件选择器（默认 true）
  * @returns {Promise<{success: boolean, filename: string, method: string}>}
  */
@@ -491,10 +493,11 @@ export async function exportProjectGraphMeta({
   sceneId,
   nodes,
   videos,
+  marks,
   useFilePicker = true,
 }) {
-  // 提取路线
-  const extractedRoutes = await extractRoutesFromProject(nodes || {}, videos || []);
+  // 提取路线（从marks提取以支持重复节点）
+  const extractedRoutes = await extractRoutesFromProject(nodes || {}, videos || [], marks || {});
   const routesArray = Object.values(extractedRoutes).map(route => ({
     route_id: route.route_id,
     route_name: route.route_name,

@@ -233,11 +233,16 @@ export const useAnnotationStore = create((set, get) => ({
   // 删除节点在指定视频的段落
   // 注意：只删除video_segments中的对应视频，保留节点定义
   // 这样从JSON导入的节点分类会被保留，即使在所有视频中都没有实例
+  // 同时删除该视频中所有引用该节点的marks，保持数据一致性
   deleteNodeVideoSegment: (nodeId, videoId) => set((state) => {
     const node = state.nodes[nodeId];
     if (!node) return state;
 
     const { [videoId]: _, ...remainingSegments } = node.video_segments;
+
+    // 删除该视频中所有引用该节点的marks
+    const videoMarks = state.marks[videoId] || [];
+    const cleanedMarks = videoMarks.filter(mark => mark.node_id !== nodeId);
 
     // 保留节点定义，只删除当前视频的segment
     // 即使remainingSegments为空，也保留节点（用于导入的节点分类）
@@ -249,6 +254,10 @@ export const useAnnotationStore = create((set, get) => ({
           video_segments: remainingSegments,
           updated_at: new Date().toISOString()
         }
+      },
+      marks: {
+        ...state.marks,
+        [videoId]: cleanedMarks
       }
     };
   }),
@@ -404,6 +413,48 @@ export const useAnnotationStore = create((set, get) => ({
       routeProgress: {
         ...state.routeProgress,
         currentIndex: newIndex
+      }
+    };
+  }),
+
+  /**
+   * Go back to previous node in route
+   * 回退到上一个节点（撤销功能）
+   */
+  retreatRouteProgress: () => set((state) => {
+    if (!state.routeProgress || !state.activeRoute) return state;
+
+    const newIndex = state.routeProgress.currentIndex - 1;
+
+    // Check if we're already at the beginning
+    if (newIndex < 0) {
+      return state; // Don't go before the start
+    }
+
+    return {
+      routeProgress: {
+        ...state.routeProgress,
+        currentIndex: newIndex
+      }
+    };
+  }),
+
+  /**
+   * Jump to specific node index in route
+   * 跳转到路由中的指定节点索引
+   */
+  setRouteProgressIndex: (index) => set((state) => {
+    if (!state.routeProgress || !state.activeRoute) return state;
+
+    // Validate index bounds
+    if (index < 0 || index >= state.activeRoute.node_sequence.length) {
+      return state;
+    }
+
+    return {
+      routeProgress: {
+        ...state.routeProgress,
+        currentIndex: index
       }
     };
   }),
